@@ -22,6 +22,7 @@ DEFAULTS = {
     "trigger": "бот", "context_messages": 30, "context_hours": 24,
     "retention_days": 7, "search_enabled": True, "cooldown_seconds": 15,
     "max_requests_hour": 50, "providers": {}, "enabled_models": [], "default_model": "",
+    "auto_models_providers": [],
 }
 
 
@@ -44,6 +45,7 @@ def load_config():
 
     cfg["providers"] = dict(cfg.get("providers") or {})
     cfg["enabled_models"] = list(cfg.get("enabled_models") or [])
+    cfg["auto_models_providers"] = list(cfg.get("auto_models_providers") or [])
     if not cfg["providers"] and cfg.get("api_key"):
         provider = cfg["provider"]
         cfg["providers"] = {
@@ -61,7 +63,8 @@ def save_config(cfg):
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
     with tmp.open("w", encoding="utf-8") as file:
-        json.dump(cfg, file, indent=2, ensure_ascii=False)
+        json.dump({k: v for k, v in cfg.items() if not k.startswith("_")},
+                  file, indent=2, ensure_ascii=False)
     os.chmod(tmp, 0o640)
     try:
         os.chown(tmp, -1, grp.getgrnam("aibot").gr_gid)
