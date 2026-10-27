@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """AI-bot для ВК. Один процесс, SQLite, Bots Long Poll."""
+import json
 import logging
 import signal
 import sys
@@ -8,6 +9,9 @@ import time
 import requests
 
 from ai_bot.core import History, load_config, needs_search, trigger_question
+from ai_bot.catalog import enabled_models, model_label
+from ai_bot.commands import process_command
+from ai_bot.preferences import effective
 from ai_bot.providers import ProviderError, generate
 from ai_bot.search import format_results, search_sites
 
@@ -39,16 +43,27 @@ def vk_call(cfg, name, **params):
     return data["response"]
 
 
-def send(cfg, peer, text):
+def send(cfg, peer, text, menu=False):
     if not text:
         text = "ИИ не вернул текст ответа."
     # ВК ограничивает размер сообщения; не отправляем слишком длинный ответ.
     text = text[:3900]
+    params = {}
+    if menu:
+        params["keyboard"] = json.dumps({
+            "inline": True,
+            "buttons": [
+                [{"action": {"type": "text", "label": "бот модели"}, "color": "primary"},
+                 {"action": {"type": "text", "label": "бот настройки"}, "color": "secondary"}],
+                [{"action": {"type": "text", "label": "бот диалог"}, "color": "secondary"},
+                 {"action": {"type": "text", "label": "бот помощь"}, "color": "secondary"}],
+            ],
+        }, ensure_ascii=False)
     vk_call(cfg, "messages.send", peer_id=peer, random_id=__import__("secrets").randbelow(2147483647) + 1,
-            message=text)
+            message=text, **params)
 
 
-def build_prompt(history, question, search_results=None, tried_search=False):
+def build_prompt(history, question, search_results=None, tried_search=False, style="normal"):
     convo = "\n".join(
         ("Бот" if sender < 0 else "Участник " + str(sender)) + ": " + text
         for sender, text in history
@@ -60,8 +75,29 @@ def build_prompt(history, question, search_results=None, tried_search=False):
             convo[-14000:] + "\n\nТекущий вопрос к боту:\n" + question)
     if found:
         user += "\n\nРезультаты внешнего поиска (возможно неточные фрагменты):\n" + found
-    return [{"role": "system", "content": SYSTEM},
+    styles = {
+        "short": "Отвечай очень кратко, максимум 2-3 предложения.",
+        "normal": "Отвечай умеренно кратко.",
+        "detailed": "Отвечай подробнее, но без лишней воды.",
+    }
+    return [{"role": "system", "content": SYSTEM + "\n" + styles.get(style, styles["normal"])},
             {"role": "user", "content": user}]
+
+
+def is_chat_admin(cfg, peer, sender):
+    """Отказ по умолчанию: если VK не подтвердил права, менять беседу нельзя."""
+    if int(peer) < 2000000000:
+        return False
+    try:
+        response = vk_call(cfg, "messages.getConversationMembers",
+                           peer_id=int(peer), group_id=int(cfg["group_id"]))
+        for item in response.get("items", []):
+            if int(item.get("member_id", 0)) == int(sender):
+                return bool(item.get("is_admin") or item.get("is_owner") or
+                            item.get("can_kick") or item.get("role") in ("admin", "owner"))
+    except (RuntimeError, ValueError, KeyError, TypeError, requests.RequestException):
+        LOG.warning("Не получилось проверить права администратора беседы %d", peer)
+    return False
 
 
 def handle_message(cfg, db, item, cooldowns):
@@ -89,7 +125,15 @@ def handle_message(cfg, db, item, cooldowns):
     if question is None:
         return
     if not question:
-        send(cfg, peer, "Напишите вопрос после обращения «" + cfg["trigger"] + "».")
+        send(cfg, peer, "Напишите вопрос после обращения «" + cfg["trigger"] + "». Для настроек: бот меню")
+        return
+
+    # Команды конфигурации бесплатны: не требуют запроса к облачной модели,
+    # работают даже при исчерпанной часовой квоте и никогда не возвращают токены API.
+    cmd = process_command(cfg, db, peer, sender, question,
+                          chat_admin=lambda: is_chat_admin(cfg, peer, sender))
+    if cmd is not None:
+        send(cfg, peer, cmd, menu=question.lower().strip() in ("меню", "помощь", "help", "старт"))
         return
 
     current = time.monotonic()
@@ -98,16 +142,31 @@ def handle_message(cfg, db, item, cooldowns):
     if db.count_calls_hour() >= int(cfg["max_requests_hour"]):
         send(cfg, peer, "Часовой лимит бесплатных запросов исчерпан. Попробуйте позже.")
         return
+
+    allowed = enabled_models(cfg)
+    if not allowed:
+        send(cfg, peer, "Администратор ещё не включил ИИ-модели. Настроить: sudo aibot")
+        return
+    settings = effective(db.db, cfg, peer, sender, allowed)
+    selected = settings["model"]
+    if not selected:
+        send(cfg, peer, "Пока нет доступных моделей. Напишите: бот модели")
+        return
+
     cooldowns[peer] = current
     db.track_call()
-    recent = db.recent(peer, cfg["context_messages"], cfg["context_hours"])
-    do_search = bool(cfg["search_enabled"] and needs_search(question))
+    recent = db.recent(peer, settings["context_messages"], cfg["context_hours"])
+    do_search = bool(cfg["search_enabled"] and (
+        settings["search"] == "on" or
+        (settings["search"] == "auto" and needs_search(question))
+    ))
     found = search_sites(question) if do_search else []
-    messages = build_prompt(recent, question, found, tried_search=do_search)
+    messages = build_prompt(recent, question, found, tried_search=do_search,
+                            style=settings["style"])
     try:
-        answer = generate(cfg, messages)
+        answer = generate(cfg, messages, selected=selected)
     except (ProviderError, requests.RequestException) as exc:
-        LOG.error("Ошибка ИИ: %s", exc)
+        LOG.error("Ошибка ИИ (%s): %s", selected, exc)
         if found:
             fallback = "ИИ временно недоступен. Вот результаты поиска:\n"
             for item in found[:3]:
@@ -117,7 +176,6 @@ def handle_message(cfg, db, item, cooldowns):
             send(cfg, peer, "Не удалось получить ответ ИИ: " + str(exc)[:150])
         return
     if found:
-        # Проверяемые ссылки добавляются из реального поиска, а не из выдумки модели.
         answer = answer[:3000] + "\n\nИсточники:\n" + "\n".join(r["url"] for r in found[:3])
     send(cfg, peer, answer)
     db.add(peer, -int(cfg["group_id"]), f"bot:{peer}:{message_id}", answer)
@@ -125,7 +183,7 @@ def handle_message(cfg, db, item, cooldowns):
 
 def run():
     cfg = load_config()
-    if not cfg["vk_token"] or not cfg["api_key"] or not int(cfg["group_id"]):
+    if not cfg["vk_token"] or not enabled_models(cfg) or not int(cfg["group_id"]):
         raise SystemExit("Сначала запустите sudo aibot setup")
     db = History()
     db.cleanup(cfg["retention_days"])
