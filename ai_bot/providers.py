@@ -1,21 +1,15 @@
 """Несколько облачных API. Сервер выполняет только HTTP-запросы."""
 import requests
 
-from ai_bot.catalog import enabled_models, split_model
+from ai_bot.catalog import SPECS, enabled_models, split_model
 
 
 class ProviderError(Exception):
     pass
 
 
-ENDPOINTS = {
-    "groq": "https://api.groq.com/openai/v1/chat/completions",
-    "openrouter": "https://openrouter.ai/api/v1/chat/completions",
-    "mistral": "https://api.mistral.ai/v1/chat/completions",
-    "zai": "https://api.z.ai/api/paas/v4/chat/completions",
-    "siliconflow": "https://api.siliconflow.cn/v1/chat/completions",
-    "modelscope": "https://api-inference.modelscope.cn/v1/chat/completions",
-}
+# Адреса берутся из локального доверенного реестра, не из сообщений ВК.
+ENDPOINTS = {p: s["endpoint"] for p, s in SPECS.items() if s.get("type") == "openai"}
 
 
 def generate(cfg, messages, selected=None):
@@ -30,7 +24,7 @@ def generate(cfg, messages, selected=None):
             raise ProviderError("Выбранная модель отключена администратором")
     provider, model = split_model(chosen)
     settings = cfg["providers"][provider]
-    key = settings["api_key"]
+    key = settings.get("api_key") or SPECS[provider].get("anonymous_key", "")
     if provider == "gemini":
         # Здесь model берётся только из белого списка; key передаём заголовком.
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
