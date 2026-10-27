@@ -36,7 +36,12 @@ def load_config():
     # Автоматическая миграция конфигурации v1: не теряем старый API-ключ.
     from ai_bot.catalog import PROVIDERS as NEW_PROVIDERS, model_key
     if cfg.get("provider") not in NEW_PROVIDERS:
-        raise ValueError("Неизвестный ИИ-провайдер")
+        # Старый custom/huggingface теперь исключён: без аварийного завершения
+        # отбрасываем выбор и просим настроить бесплатный провайдер.
+        cfg["provider"] = "groq"
+        cfg["api_key"] = ""
+        cfg["model"] = ""
+
     cfg["providers"] = dict(cfg.get("providers") or {})
     cfg["enabled_models"] = list(cfg.get("enabled_models") or [])
     if not cfg["providers"] and cfg.get("api_key"):

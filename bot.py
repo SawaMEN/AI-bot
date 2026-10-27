@@ -14,6 +14,7 @@ from ai_bot.commands import process_command
 from ai_bot.preferences import effective
 from ai_bot.providers import ProviderError, generate
 from ai_bot.search import format_results, search_sites
+from ai_bot.vk_ui import callback_command, for_command
 
 LOG = logging.getLogger("aibot")
 VK_API = "https://api.vk.com/method/"
@@ -43,23 +44,15 @@ def vk_call(cfg, name, **params):
     return data["response"]
 
 
-def send(cfg, peer, text, menu=False):
+def send(cfg, peer, text, menu=False, keyboard=None):
     if not text:
         text = "ИИ не вернул текст ответа."
-    # ВК ограничивает размер сообщения; не отправляем слишком длинный ответ.
-    text = text[:3900]
-    params = {}
-    if menu:
-        params["keyboard"] = json.dumps({
-            "inline": True,
-            "buttons": [
-                [{"action": {"type": "text", "label": "бот модели"}, "color": "primary"},
-                 {"action": {"type": "text", "label": "бот настройки"}, "color": "secondary"}],
-                [{"action": {"type": "text", "label": "бот диалог"}, "color": "secondary"},
-                 {"action": {"type": "text", "label": "бот помощь"}, "color": "secondary"}],
-            ],
-        }, ensure_ascii=False)
-    vk_call(cfg, "messages.send", peer_id=peer, random_id=__import__("secrets").randbelow(2147483647) + 1,
+    text = str(text)[:3900]
+    if menu and keyboard is None:
+        keyboard = for_command("меню", cfg)
+    params = {"keyboard": keyboard} if keyboard is not None else {}
+    vk_call(cfg, "messages.send", peer_id=peer,
+            random_id=__import__("secrets").randbelow(2147483647) + 1,
             message=text, **params)
 
 
@@ -125,7 +118,8 @@ def handle_message(cfg, db, item, cooldowns):
     if question is None:
         return
     if not question:
-        send(cfg, peer, "Напишите вопрос после обращения «" + cfg["trigger"] + "». Для настроек: бот меню")
+        send(cfg, peer, "Напишите вопрос после упоминания сообщества или откройте настройки кнопкой.",
+             keyboard=for_command("меню", cfg))
         return
 
     # Команды конфигурации бесплатны: не требуют запроса к облачной модели,
@@ -133,7 +127,7 @@ def handle_message(cfg, db, item, cooldowns):
     cmd = process_command(cfg, db, peer, sender, question,
                           chat_admin=lambda: is_chat_admin(cfg, peer, sender))
     if cmd is not None:
-        send(cfg, peer, cmd, menu=question.lower().strip() in ("меню", "помощь", "help", "старт"))
+        send(cfg, peer, cmd, keyboard=for_command(question, cfg))
         return
 
     current = time.monotonic()
@@ -181,6 +175,32 @@ def handle_message(cfg, db, item, cooldowns):
     db.add(peer, -int(cfg["group_id"]), f"bot:{peer}:{message_id}", answer)
 
 
+
+def handle_button_event(cfg, db, data):
+    """ВК callback: только настройка/чтение, никогда не генерируем ответ ИИ."""
+    if not isinstance(data, dict):
+        return
+    command = callback_command(data)
+    if command is None:
+        return
+    try:
+        peer = int(data["peer_id"])
+        user = int(data["user_id"])
+        event_id = str(data["event_id"])
+    except (KeyError, ValueError, TypeError):
+        return
+    if user <= 0 or not event_id:
+        return
+    # Подтвердить callback, чтобы у участника исчез индикатор ожидания.
+    vk_call(cfg, "messages.sendMessageEventAnswer",
+            event_id=event_id, peer_id=peer, user_id=user,
+            event_data=json.dumps({"type": "show_snackbar", "text": "Открываю меню…"},
+                                  ensure_ascii=False))
+    result = process_command(cfg, db, peer, user, command,
+                             chat_admin=lambda: is_chat_admin(cfg, peer, user))
+    if result is not None:
+        send(cfg, peer, result, keyboard=for_command(command, cfg))
+
 def run():
     cfg = load_config()
     if not cfg["vk_token"] or not enabled_models(cfg) or not int(cfg["group_id"]):
@@ -216,14 +236,17 @@ def run():
             server_data["ts"] = data["ts"]
             retries = 0
             for event in data.get("updates", []):
-                if event.get("type") != "message_new":
+                event_type = event.get("type")
+                if event_type not in ("message_new", "message_event"):
                     continue
-                obj = event.get("object", {})
-                item = obj.get("message", obj)
+                obj = event.get("object") or {}
                 try:
-                    handle_message(cfg, db, item, cooldowns)
+                    if event_type == "message_event":
+                        handle_button_event(cfg, db, obj)
+                    else:
+                        handle_message(cfg, db, obj.get("message", obj), cooldowns)
                 except Exception:
-                    LOG.exception("Ошибка обработки сообщения")
+                    LOG.exception("Ошибка обработки события ВК")
                 handled += 1
                 if handled % 100 == 0:
                     db.cleanup(cfg["retention_days"])
