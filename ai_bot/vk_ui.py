@@ -29,7 +29,7 @@ def main_menu():
 
 def model_menu(allowed, page=1, chat=False):
     """Номера в списке не меняются между страницами."""
-    size = 5
+    size = 4
     pages = max(1, (len(allowed) + size - 1) // size)
     page = max(1, min(int(page), pages))
     offset = (page - 1) * size
