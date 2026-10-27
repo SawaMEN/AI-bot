@@ -9,7 +9,7 @@ import time
 import requests
 
 from ai_bot.core import History, load_config, needs_search, trigger_question
-from ai_bot.catalog import enabled_models, model_label
+from ai_bot.catalog import enabled_models, model_label, refresh_free_models
 from ai_bot.commands import process_command
 from ai_bot.preferences import effective
 from ai_bot.providers import ProviderError, generate
@@ -203,6 +203,9 @@ def handle_button_event(cfg, db, data):
 
 def run():
     cfg = load_config()
+    # Каталог подгружается в оперативную память. Неизвестные цены и сбои API
+    # никогда не включают модель автоматически.
+    refresh_free_models(cfg)
     if not cfg["vk_token"] or not enabled_models(cfg) or not int(cfg["group_id"]):
         raise SystemExit("Сначала запустите sudo aibot setup")
     db = History()
@@ -211,8 +214,14 @@ def run():
     server_data = None
     retries = 0
     handled = 0
+    last_catalog_update = time.monotonic()
     while not STOP:
         try:
+            if time.monotonic() - last_catalog_update >= 12 * 3600:
+                changes = refresh_free_models(cfg)
+                LOG.info("Каталоги бесплатных ИИ обновлены: %s",
+                         {provider: result[0] for provider, result in changes.items()})
+                last_catalog_update = time.monotonic()
             if server_data is None:
                 server_data = vk_call(cfg, "groups.getLongPollServer", group_id=cfg["group_id"])
                 LOG.info("Подключено к ВК Long Poll")
