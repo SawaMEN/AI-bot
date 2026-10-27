@@ -71,19 +71,27 @@ def save_config(cfg):
 
 
 def trigger_question(text, group_id, trigger="бот", replied_to_bot=False):
-    """Возвращает вопрос без обращения к боту или None."""
+    """Обращение по упоминанию в любой части фразы, даже без слова «бот»."""
     if not isinstance(text, str):
         return None
     raw = text.strip()
-    expressions = [
+    if not raw:
+        return None
+    for expression in (
         rf"^{re.escape(trigger)}(?=$|[\s,.:;!?])[\s,.:;!?]*",
         r"^/ai(?=$|[\s,.:;!?])[\s,.:;!?]*",
-        rf"^\[club{int(group_id)}\|[^\]]+\][\s,.:;!?]*",
-    ]
-    for expression in expressions:
-        matched = re.match(expression, raw, flags=re.IGNORECASE)
-        if matched:
-            return raw[matched.end():].strip()
+    ):
+        found = re.match(expression, raw, flags=re.IGNORECASE)
+        if found:
+            return raw[found.end():].strip()
+    group_id = int(group_id)
+    found = re.search(
+        rf"\[(?:club|public){group_id}\|[^\]]+\]|@(?:club|public){group_id}(?!\d)",
+        raw, flags=re.IGNORECASE
+    )
+    if found:
+        question = (raw[:found.start()] + " " + raw[found.end():]).strip()
+        return question.strip(" ,.:;!?")
     return raw if replied_to_bot else None
 
 
