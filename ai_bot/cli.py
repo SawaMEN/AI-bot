@@ -215,6 +215,9 @@ def configure_behavior(cfg):
                                       cfg["cooldown_seconds"], 0, 3600)
     cfg["max_requests_hour"] = integer("Максимум запросов к ИИ за час",
                                        cfg["max_requests_hour"], 1, 10000)
+    print("Если бесплатная модель недоступна, разрешить попытку другой бесплатной модели?")
+    cfg["free_fallback"] = ask("Автоматический резерв (д/н)",
+                               "д" if cfg.get("free_fallback", True) else "н").lower() in ("д", "да", "yes", "y")
     save_config(cfg)
 
 
