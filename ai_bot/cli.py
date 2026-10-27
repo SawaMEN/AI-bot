@@ -4,8 +4,8 @@ import os
 import subprocess
 import sys
 
-from ai_bot.catalog import (MODELS, PROVIDERS, default_model, discover_openrouter,
-                            enabled_models, model_key, model_label)
+from ai_bot.catalog import (MODELS, PROVIDERS, SPECS, default_model,
+                            enabled_models, model_key, model_label, refresh_free_models)
 from ai_bot.core import History, load_config, save_config
 
 
@@ -69,94 +69,133 @@ def choose_indices(label, items, current=()):
 
 
 def edit_provider(cfg, provider):
-    print("\n--- " + PROVIDERS[provider][0] + " ---")
-    print("Как получить API-ключ:", PROVIDERS[provider][1] or "ваш поставщик API")
-    print("Это внешний API, никакие модели на VDS устанавливать не нужно.")
-    print("НЕ добавляйте карту и НЕ переходите на платный тариф; бесплатные лимиты ограничены.")
+    """Один мастер вместо ручного ввода десятков названий моделей."""
+    spec = SPECS[provider]
+    name, url = PROVIDERS[provider]
+    print("\n--- " + name + " ---")
+    print("Регистрация и получение ключа:", url)
+    print("Модели запускаются у провайдера, не на вашем VDS.")
+    print("Подключайте ТОЛЬКО бесплатный аккаунт, без карты и оплаты.")
     entry = cfg.setdefault("providers", {}).setdefault(provider, {})
-    entry["api_key"] = secret("API-ключ", entry.get("api_key", ""))
-    if not entry["api_key"]:
+    if spec["free_policy"] == "volunteer":
+        print("AI Horde: волонтёры обрабатывают ваши сообщения. НЕ используйте для закрытых бесед.")
+        print("Можно использовать анонимный ключ 0000000000 без регистрации (низкий приоритет).")
+        entry["api_key"] = secret("Личный ключ AI Horde (необязательно)", entry.get("api_key", ""))
+    else:
+        entry["api_key"] = secret("API-ключ " + name, entry.get("api_key", ""))
+    if not (entry.get("api_key") or spec.get("anonymous_key")):
+        print("Ключ не указан; провайдер остаётся отключённым.")
         entry["enabled"] = False
-        cfg["enabled_models"] = [k for k in cfg.get("enabled_models", [])
-                                  if not k.startswith(provider + ":")]
         save_config(cfg)
-        print("API-ключ не задан, провайдер выключен.")
         return
     if provider == "cloudflare":
         entry["cloudflare_account"] = ask("Cloudflare Account ID",
-                                           entry.get("cloudflare_account", ""))
+                                          entry.get("cloudflare_account", ""))
         if not entry["cloudflare_account"]:
-            print("Без Account ID этот провайдер будет недоступен.")
-    choices = list(MODELS[provider])
-    if provider == "openrouter":
-            print("Автоматически запрашиваю актуальные бесплатные модели OpenRouter…")
-            try:
-                dynamic = discover_openrouter(entry["api_key"])
-                choices += [pair for pair in dynamic if pair[0] not in {c[0] for c in choices}]
-                print("Обнаружено бесплатных моделей:", len(dynamic))
-            except Exception as exc:
-                print("Каталог сейчас недоступен; доступен бесплатный автоподбор.")
-    if provider == "mistral":
-        print("Используйте план Studio Free без привязанной карты. Доступные модели зависят от вашего аккаунта.")
-    if provider == "siliconflow":
-        print("Для бесплатных моделей SiliconFlow может требоваться проверка личности.")
-    if provider == "modelscope":
-        print("Выберите модели, у которых указан бесплатный провайдер ModelScope.")
-    print("ВНИМАНИЕ: только бесплатные модели из проверенного списка, без пользовательских платных ID.")
-    print("Отметьте только модели, которые хотите разрешить участникам ВК.")
-    current = [k.split(":", 1)[1] for k in cfg.get("enabled_models", [])
-               if k.startswith(provider + ":")]
-    ids = choose_indices("Номера разрешённых моделей через запятую", choices, current) if choices else []
-    cfg["enabled_models"] = [k for k in cfg.get("enabled_models", [])
-                              if not k.startswith(provider + ":")] + [model_key(provider, m) for m in ids]
-    entry["enabled"] = bool(ids)
+            print("Не указан Account ID, модель пока недоступна.")
+    print("\n1. Автоматически включать ВСЕ подтверждённые бесплатные модели (рекомендуется)")
+    print("2. Выбрать конкретные бесплатные модели вручную")
+    print("3. Отключить провайдера")
+    choice = integer("Режим", 1, 1, 3)
+    auto = cfg.setdefault("auto_models_providers", [])
+    if choice == 3:
+        entry["enabled"] = False
+        cfg["auto_models_providers"] = [p for p in auto if p != provider]
+        save_config(cfg)
+        print("Провайдер отключён.")
+        return
+    entry["enabled"] = True
+    if choice == 1:
+        if provider not in auto:
+            auto.append(provider)
+        # Ручной выбор для провайдера убираем только у этого провайдера.
+        cfg["enabled_models"] = [k for k in cfg["enabled_models"]
+                                  if not k.startswith(provider + ":")]
+        if spec["free_policy"] == "curated":
+            print("Включены безопасные модели из локального белого списка:", len(MODELS[provider]))
+        else:
+            print("Получаю каталог и проверяю стоимость моделей...")
+            status = refresh_free_models(cfg, provider)
+            count, err = status.get(provider, (0, "неизвестная ошибка"))
+            if err:
+                print("Каталог временно недоступен:", err,
+                      "— до новой проверки платные/неизвестные модели не включаются.")
+            else:
+                print("Найдено бесплатных моделей:", count)
+        print("Новые бесплатные модели будут проверяться автоматически каждые 12 часов.")
+    else:
+        cfg["auto_models_providers"] = [p for p in auto if p != provider]
+        items = list(MODELS[provider])
+        if spec["free_policy"] != "curated":
+            print("Проверяю бесплатные модели через API...")
+            status = refresh_free_models(cfg, provider)
+            if status.get(provider, (0, "ошибка"))[1]:
+                print("Каталог не ответил. Попробуйте автоматический режим позже.")
+            items = cfg.get("_verified_free_models", {}).get(provider, [])
+        if not items:
+            print("Сейчас нет подтверждённых бесплатных моделей.")
+            entry["enabled"] = False
+        else:
+            existing = [k.split(":", 1)[1] for k in cfg.get("enabled_models", [])
+                        if k.startswith(provider + ":")]
+            picked = choose_indices("Номера моделей через запятую", items, existing)
+            cfg["enabled_models"] = [k for k in cfg["enabled_models"]
+                                      if not k.startswith(provider + ":")] + [
+                                          model_key(provider, m) for m in picked]
+            print("Разрешено моделей:", len(picked))
     if cfg.get("default_model") not in enabled_models(cfg):
         cfg["default_model"] = default_model(cfg) or ""
     save_config(cfg)
-    print(f"Сохранено моделей: {len(ids)}. Изменения вступят после перезапуска бота.")
+    print("Готово. Изменения вступят после перезапуска бота.")
 
 
 def configure_ai(cfg):
     while True:
-        print("\n--- Провайдеры и модели ---")
         keys = list(PROVIDERS)
-        active = set(k.split(":", 1)[0] for k in enabled_models(cfg))
+        n = len(keys)
+        active = set(cfg.get("auto_models_providers", [])) | set(
+            k.split(":", 1)[0] for k in cfg.get("enabled_models", []))
+        print("\n====== Бесплатные ИИ — управление ======")
         for i, key in enumerate(keys, 1):
-            flag = "ВКЛ" if key in active else "выкл"
-            print(f"{i}. {PROVIDERS[key][0]} — {flag}")
-        print("9. Модель по умолчанию для новых участников")
-        print("10. Отключить провайдера")
-        print("0. Назад / сохранить")
-        number = integer("Выберите пункт", 0, 0, 10)
+            entry = cfg.get("providers", {}).get(key, {})
+            flag = "ВКЛ/авто" if entry.get("enabled") and key in active else "выкл"
+            print(f"{i:>2}. {PROVIDERS[key][0]} [{flag}]")
+        print(f"{n+1}. Модель по умолчанию")
+        print(f"{n+2}. Проверить и обновить бесплатные каталоги")
+        print(f"{n+3}. Включить автоподбор у всех УЖЕ подключённых провайдеров")
+        print("0. Назад")
+        number = integer("Номер пункта", 0, 0, n + 3)
         if number == 0:
             break
-        if 1 <= number <= len(keys):
-            edit_provider(cfg, keys[number-1])
-        elif number == 9:
+        if 1 <= number <= n:
+            edit_provider(cfg, keys[number - 1])
+        elif number == n + 1:
+            refresh_free_models(cfg)
             allowed = enabled_models(cfg)
             if not allowed:
-                print("Сначала настройте хотя бы один провайдер.")
+                print("Сначала настройте бесплатных провайдеров.")
                 continue
-            for index, key in enumerate(allowed, 1):
-                print(f"{index}. {model_label(key)}")
-            default = allowed.index(default_model(cfg)) + 1
-            index = integer("Номер модели по умолчанию", default, 1, len(allowed))
-            cfg["default_model"] = allowed[index-1]
+            for i, key in enumerate(allowed, 1):
+                print(i, model_label(key))
+            index = integer("Выберите номер основной модели", 1, 1, len(allowed))
+            cfg["default_model"] = allowed[index - 1]
             save_config(cfg)
-        elif number == 10:
-            for i, key in enumerate(keys, 1):
-                print(i, PROVIDERS[key][0])
-            n = integer("Кого отключить", 1, 1, len(keys))
-            provider = keys[n-1]
-            cfg.setdefault("providers", {}).setdefault(provider, {})["enabled"] = False
-            if cfg.get("default_model") not in enabled_models(cfg):
-                cfg["default_model"] = default_model(cfg) or ""
+        elif number == n + 2:
+            for provider, (count, error) in refresh_free_models(cfg).items():
+                print(f"{PROVIDERS[provider][0]}: {count} бесплатных моделей" +
+                      (f" (ошибка: {error})" if error else ""))
+            print("Всего доступно:", len(enabled_models(cfg)))
+        elif number == n + 3:
+            for provider in keys:
+                entry = cfg.get("providers", {}).get(provider, {})
+                if entry.get("enabled") and (entry.get("api_key") or SPECS[provider].get("anonymous_key")):
+                    if provider not in cfg.setdefault("auto_models_providers", []):
+                        cfg["auto_models_providers"].append(provider)
             save_config(cfg)
-            print("Отключено. Личные предпочтения переключатся на доступную модель.")
-    if enabled_models(cfg):
-        print("Активных моделей:", len(enabled_models(cfg)))
-    else:
-        print("Внимание: нет активных моделей. Бот пока не сможет отвечать.")
+            refresh_free_models(cfg)
+            print("Автоподбор включён для всех подключённых провайдеров.")
+    print("Автоматически поддерживаемых провайдеров:",
+          len(cfg.get("auto_models_providers", [])))
 
 
 def configure_behavior(cfg):
@@ -184,6 +223,7 @@ def service(action):
 
 
 def show_status(cfg):
+    refresh_free_models(cfg)
     allowed = enabled_models(cfg)
     print("\n--- AI-bot — состояние ---")
     print("ВКонтакте:", "настроен" if cfg["vk_token"] and cfg["group_id"] else "нужна настройка")
@@ -241,7 +281,10 @@ def main():
     action = sys.argv[1] if len(sys.argv) > 1 else "menu"
     cfg = load_config()
     if action == "is-configured":
-        sys.exit(0 if cfg["vk_token"] and cfg["group_id"] and enabled_models(cfg) else 1)
+        connected = any(
+            item.get("enabled") and (item.get("api_key") or SPECS[name].get("anonymous_key"))
+            for name, item in cfg.get("providers", {}).items() if name in SPECS)
+        sys.exit(0 if cfg["vk_token"] and cfg["group_id"] and connected else 1)
     if action in ("setup", "menu", "vk", "api", "behavior", "clear", "restart"):
         require_root()
     if action == "setup":
