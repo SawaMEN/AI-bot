@@ -9,7 +9,7 @@ import time
 import requests
 
 from ai_bot.core import History, load_config, needs_search, trigger_question
-from ai_bot.catalog import enabled_models, model_label
+from ai_bot.catalog import SPECS, enabled_models, model_label, refresh_free_models
 from ai_bot.commands import process_command
 from ai_bot.preferences import effective
 from ai_bot.providers import ProviderError, generate
@@ -157,18 +157,36 @@ def handle_message(cfg, db, item, cooldowns):
     found = search_sites(question) if do_search else []
     messages = build_prompt(recent, question, found, tried_search=do_search,
                             style=settings["style"])
-    try:
-        answer = generate(cfg, messages, selected=selected)
-    except (ProviderError, requests.RequestException) as exc:
-        LOG.error("Ошибка ИИ (%s): %s", selected, exc)
+    answer = None
+    used_model = selected
+    last_error = None
+    # Переключение только между моделями из серверного белого списка.
+    # Чтобы не расходовать квоты зря, максимум одна резервная попытка.
+    candidates = [selected]
+    if cfg.get("free_fallback", True):
+        others = [key for key in allowed if key != selected]
+        current_provider = selected.split(":", 1)[0]
+        others.sort(key=lambda key: key.split(":", 1)[0] == current_provider)
+        candidates += others[:1]
+    for candidate in candidates:
+        try:
+            answer = generate(cfg, messages, selected=candidate)
+            used_model = candidate
+            break
+        except (ProviderError, requests.RequestException) as exc:
+            last_error = exc
+            LOG.warning("Бесплатный ИИ %s недоступен: %s", candidate, type(exc).__name__)
+    if answer is None:
         if found:
             fallback = "ИИ временно недоступен. Вот результаты поиска:\n"
             for item in found[:3]:
                 fallback += "\n" + item["title"] + "\n" + item["body"][:180] + "\n" + item["url"] + "\n"
             send(cfg, peer, fallback)
         else:
-            send(cfg, peer, "Не удалось получить ответ ИИ: " + str(exc)[:150])
+            send(cfg, peer, "Бесплатные ИИ сейчас недоступны. " + str(last_error or "")[:120])
         return
+    if used_model != selected:
+        answer += "\n\n(Резервная бесплатная модель: " + model_label(used_model) + ")"
     if found:
         answer = answer[:3000] + "\n\nИсточники:\n" + "\n".join(r["url"] for r in found[:3])
     send(cfg, peer, answer)
@@ -203,16 +221,38 @@ def handle_button_event(cfg, db, data):
 
 def run():
     cfg = load_config()
-    if not cfg["vk_token"] or not enabled_models(cfg) or not int(cfg["group_id"]):
+    # Каталог подгружается в оперативную память. Неизвестные цены и сбои API
+    # никогда не включают модель автоматически.
+    scan = refresh_free_models(cfg)
+    has_provider = any(
+        SPECS[name].get("anonymous_key") or details.get("api_key")
+        for name, details in cfg.get("providers", {}).items()
+        if name in SPECS and details.get("enabled")
+    )
+    if not cfg["vk_token"] or not has_provider or not int(cfg["group_id"]):
         raise SystemExit("Сначала запустите sudo aibot setup")
+    if not enabled_models(cfg):
+        LOG.warning("Каталог недоступен: бот запущен без моделей. Повторная проверка через 10 минут.")
     db = History()
     db.cleanup(cfg["retention_days"])
     cooldowns = {}
     server_data = None
     retries = 0
     handled = 0
+    next_catalog_update = time.monotonic() + (
+        600 if not enabled_models(cfg) or any(err for _, err in scan.values())
+        else 12 * 3600
+    )
     while not STOP:
         try:
+            if time.monotonic() >= next_catalog_update:
+                changes = refresh_free_models(cfg)
+                LOG.info("Каталоги бесплатных ИИ обновлены: %s",
+                         {provider: result[0] for provider, result in changes.items()})
+                next_catalog_update = time.monotonic() + (
+                    600 if not enabled_models(cfg) or any(err for _, err in changes.values())
+                    else 12 * 3600
+                )
             if server_data is None:
                 server_data = vk_call(cfg, "groups.getLongPollServer", group_id=cfg["group_id"])
                 LOG.info("Подключено к ВК Long Poll")
