@@ -90,8 +90,10 @@ def trigger_question(text, group_id, trigger="бот", replied_to_bot=False):
         raw, flags=re.IGNORECASE
     )
     if found:
-        question = (raw[:found.start()] + " " + raw[found.end():]).strip()
-        return question.strip(" ,.:;!?")
+        before = raw[:found.start()].rstrip(" ,.:;!?")
+        after = raw[found.end():].lstrip(" ,.:;!?")
+        # Убираем знаки рядом с упоминанием, сохраняем пунктуацию самого вопроса.
+        return (before + " " + after).strip() if after else before
     return raw if replied_to_bot else None
 
 
