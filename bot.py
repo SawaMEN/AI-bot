@@ -157,18 +157,36 @@ def handle_message(cfg, db, item, cooldowns):
     found = search_sites(question) if do_search else []
     messages = build_prompt(recent, question, found, tried_search=do_search,
                             style=settings["style"])
-    try:
-        answer = generate(cfg, messages, selected=selected)
-    except (ProviderError, requests.RequestException) as exc:
-        LOG.error("Ошибка ИИ (%s): %s", selected, exc)
+    answer = None
+    used_model = selected
+    last_error = None
+    # Переключение только между моделями из серверного белого списка.
+    # Чтобы не расходовать квоты зря, максимум одна резервная попытка.
+    candidates = [selected]
+    if cfg.get("free_fallback", True):
+        others = [key for key in allowed if key != selected]
+        current_provider = selected.split(":", 1)[0]
+        others.sort(key=lambda key: key.split(":", 1)[0] == current_provider)
+        candidates += others[:1]
+    for candidate in candidates:
+        try:
+            answer = generate(cfg, messages, selected=candidate)
+            used_model = candidate
+            break
+        except (ProviderError, requests.RequestException) as exc:
+            last_error = exc
+            LOG.warning("Бесплатный ИИ %s недоступен: %s", candidate, type(exc).__name__)
+    if answer is None:
         if found:
             fallback = "ИИ временно недоступен. Вот результаты поиска:\n"
             for item in found[:3]:
                 fallback += "\n" + item["title"] + "\n" + item["body"][:180] + "\n" + item["url"] + "\n"
             send(cfg, peer, fallback)
         else:
-            send(cfg, peer, "Не удалось получить ответ ИИ: " + str(exc)[:150])
+            send(cfg, peer, "Бесплатные ИИ сейчас недоступны. " + str(last_error or "")[:120])
         return
+    if used_model != selected:
+        answer += "\n\n(Резервная бесплатная модель: " + model_label(used_model) + ")"
     if found:
         answer = answer[:3000] + "\n\nИсточники:\n" + "\n".join(r["url"] for r in found[:3])
     send(cfg, peer, answer)
