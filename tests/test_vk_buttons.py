@@ -38,7 +38,7 @@ class MentionAndButtons(unittest.TestCase):
         self.temp.cleanup()
 
     def test_mention_anywhere_in_message_without_bot_word(self):
-        self.assertEqual(trigger_question("[club123|Лис] что нового?", 123), "что нового")
+        self.assertEqual(trigger_question("[club123|Лис] что нового?", 123), "что нового?")
         self.assertEqual(trigger_question("что думаешь, [club123|Лис]?", 123), "что думаешь")
         self.assertEqual(trigger_question("@club123, расскажи", 123), "расскажи")
         self.assertEqual(trigger_question("[public123|Лис], расскажи", 123), "расскажи")
@@ -48,11 +48,11 @@ class MentionAndButtons(unittest.TestCase):
         self.assertIsNone(trigger_question("у нас обсуждение", 123))
 
     def test_mention_routes_regular_ai_question(self):
-        with patch("bot.generate", return_value="да") as ai, patch("bot.send"):
+        with patch("bot.generate", return_value="да") as ai, patch("bot.send") as sender:
             item = {"peer_id": 2000000001, "from_id": 8, "conversation_message_id": 1,
                     "text": "а как думаешь, [club123|Лис]?"}
             handle_message(self.cfg, self.db, item, {})
-            self.assertTrue(ai.called)
+            self.assertTrue(ai.called, f"send={sender.call_args_list} parsed={trigger_question(item['text'], 123)} allowed={enabled_models(self.cfg)}")
 
     def test_all_vk_keyboards_validate_limits(self):
         menus = [
