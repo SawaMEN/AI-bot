@@ -9,7 +9,7 @@ import time
 import requests
 
 from ai_bot.core import History, load_config, needs_search, trigger_question
-from ai_bot.catalog import enabled_models, model_label, refresh_free_models
+from ai_bot.catalog import SPECS, enabled_models, model_label, refresh_free_models
 from ai_bot.commands import process_command
 from ai_bot.preferences import effective
 from ai_bot.providers import ProviderError, generate
@@ -205,23 +205,36 @@ def run():
     cfg = load_config()
     # Каталог подгружается в оперативную память. Неизвестные цены и сбои API
     # никогда не включают модель автоматически.
-    refresh_free_models(cfg)
-    if not cfg["vk_token"] or not enabled_models(cfg) or not int(cfg["group_id"]):
+    scan = refresh_free_models(cfg)
+    has_provider = any(
+        SPECS[name].get("anonymous_key") or details.get("api_key")
+        for name, details in cfg.get("providers", {}).items()
+        if name in SPECS and details.get("enabled")
+    )
+    if not cfg["vk_token"] or not has_provider or not int(cfg["group_id"]):
         raise SystemExit("Сначала запустите sudo aibot setup")
+    if not enabled_models(cfg):
+        LOG.warning("Каталог недоступен: бот запущен без моделей. Повторная проверка через 10 минут.")
     db = History()
     db.cleanup(cfg["retention_days"])
     cooldowns = {}
     server_data = None
     retries = 0
     handled = 0
-    last_catalog_update = time.monotonic()
+    next_catalog_update = time.monotonic() + (
+        600 if not enabled_models(cfg) or any(err for _, err in scan.values())
+        else 12 * 3600
+    )
     while not STOP:
         try:
-            if time.monotonic() - last_catalog_update >= 12 * 3600:
+            if time.monotonic() >= next_catalog_update:
                 changes = refresh_free_models(cfg)
                 LOG.info("Каталоги бесплатных ИИ обновлены: %s",
                          {provider: result[0] for provider, result in changes.items()})
-                last_catalog_update = time.monotonic()
+                next_catalog_update = time.monotonic() + (
+                    600 if not enabled_models(cfg) or any(err for _, err in changes.values())
+                    else 12 * 3600
+                )
             if server_data is None:
                 server_data = vk_call(cfg, "groups.getLongPollServer", group_id=cfg["group_id"])
                 LOG.info("Подключено к ВК Long Poll")
