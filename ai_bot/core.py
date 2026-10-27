@@ -1,5 +1,6 @@
 """Лёгкое ядро: конфигурация, триггеры, история и ограничения."""
 import json
+import grp
 import os
 import re
 import sqlite3
@@ -20,7 +21,7 @@ DEFAULTS = {
     "model": PROVIDERS["groq"][1], "custom_url": "", "cloudflare_account": "",
     "trigger": "бот", "context_messages": 30, "context_hours": 24,
     "retention_days": 7, "search_enabled": True, "cooldown_seconds": 15,
-    "max_requests_hour": 50,
+    "max_requests_hour": 50, "providers": {}, "enabled_models": [], "default_model": "",
 }
 
 
@@ -32,8 +33,22 @@ def load_config():
     if not isinstance(loaded, dict):
         raise ValueError("Неверный формат конфигурации")
     cfg = {**DEFAULTS, **loaded}
-    if cfg["provider"] not in PROVIDERS:
+    # Автоматическая миграция конфигурации v1: не теряем старый API-ключ.
+    from ai_bot.catalog import PROVIDERS as NEW_PROVIDERS, model_key
+    if cfg.get("provider") not in NEW_PROVIDERS:
         raise ValueError("Неизвестный ИИ-провайдер")
+    cfg["providers"] = dict(cfg.get("providers") or {})
+    cfg["enabled_models"] = list(cfg.get("enabled_models") or [])
+    if not cfg["providers"] and cfg.get("api_key"):
+        provider = cfg["provider"]
+        cfg["providers"] = {
+            provider: {"api_key": cfg["api_key"], "enabled": True,
+                       "cloudflare_account": cfg.get("cloudflare_account", ""),
+                       "custom_url": cfg.get("custom_url", "")}
+        }
+        selected = model_key(provider, cfg.get("model", ""))
+        cfg["enabled_models"] = [selected]
+        cfg["default_model"] = selected
     return cfg
 
 
@@ -43,6 +58,10 @@ def save_config(cfg):
     with tmp.open("w", encoding="utf-8") as file:
         json.dump(cfg, file, indent=2, ensure_ascii=False)
     os.chmod(tmp, 0o640)
+    try:
+        os.chown(tmp, -1, grp.getgrnam("aibot").gr_gid)
+    except (KeyError, PermissionError):
+        pass
     os.replace(tmp, CONFIG_FILE)
 
 
@@ -88,6 +107,8 @@ class History:
         self.db.execute("""CREATE TABLE IF NOT EXISTS calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL
         )""")
+        from ai_bot.preferences import init_preferences
+        init_preferences(self.db)
         self.db.commit()
 
     def add(self, peer_id, sender_id, event_id, text):

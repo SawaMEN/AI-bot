@@ -19,7 +19,10 @@ class RuntimeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = History(Path(self.tmp.name) / "history.db")
         self.cfg = {**DEFAULTS, "group_id": 123, "vk_token": "fake",
-                    "api_key": "fake", "search_enabled": False, "cooldown_seconds": 0}
+                    "api_key": "fake", "search_enabled": False, "cooldown_seconds": 0,
+                    "providers": {"groq": {"enabled": True, "api_key": "fake"}},
+                    "enabled_models": ["groq:openai/gpt-oss-20b"],
+                    "default_model": "groq:openai/gpt-oss-20b"}
         self.cooldowns = {}
 
     def tearDown(self):
