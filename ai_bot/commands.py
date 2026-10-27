@@ -12,18 +12,23 @@ STYLE_LABEL = {"short": "кратко", "normal": "обычно", "detailed": "�
 SEARCH_LABEL = {"on": "всегда", "off": "выключен", "auto": "по запросу"}
 
 
-def model_list(allowed):
+def model_list(allowed, page=1):
     if not allowed:
         return "Администратор сервера ещё не включил ни одну ИИ-модель."
-    return "Доступные модели (номера только из этого списка):\n" + "\n".join(
-        f"{i}. {model_label(key)}" for i, key in enumerate(allowed, 1)
-    ) + "\n\nНапишите «бот модель 2», чтобы выбрать модель лично для себя."
+    per_page = 8
+    pages = (len(allowed) + per_page - 1) // per_page
+    page = max(1, min(page, pages))
+    start = (page - 1) * per_page
+    section = allowed[start:start + per_page]
+    return (f"Доступные модели (страница {page}/{pages}):\n" + "\n".join(
+        f"{start + i}. {model_label(key)}" for i, key in enumerate(section, 1)
+    ) + "\n\nВыбор: «бот модель 2». Следующая страница: «бот модели 2».")
 
 
 def help_text():
     return (
         "AI-bot — команды без кавычек:\n"
-        "• бот модели — список доступных моделей\n"
+        "• бот модели — доступные модели (бот модели 2 — следующая страница)\n"
         "• бот модель 1 — выбрать модель для себя\n"
         "• бот модель сброс — использовать модель беседы или сервера\n"
         "• бот поиск вкл / выкл / авто\n"
@@ -97,8 +102,12 @@ def process_command(cfg, db, peer, sender, question, chat_admin=None):
     allowed = enabled_models(cfg)
     if cmd in ("меню", "помощь", "help", "старт") and not args:
         return help_text()
-    if cmd == "модели" and not args:
-        return model_list(allowed)
+    if cmd == "модели":
+        if not args:
+            return model_list(allowed)
+        if len(args) == 1 and args[0].isdigit():
+            return model_list(allowed, int(args[0]))
+        return "Пример: бот модели 2"
     if cmd == "настройки" and not args:
         state = effective(db.db, cfg, peer, sender, allowed)
         return (
