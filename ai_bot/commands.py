@@ -15,7 +15,7 @@ SEARCH_LABEL = {"on": "всегда", "off": "выключен", "auto": "по �
 def model_list(allowed, page=1):
     if not allowed:
         return "Администратор сервера ещё не включил ни одну ИИ-модель."
-    per_page = 5
+    per_page = 4
     pages = (len(allowed) + per_page - 1) // per_page
     page = max(1, min(page, pages))
     start = (page - 1) * per_page
