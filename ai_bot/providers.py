@@ -12,7 +12,9 @@ ENDPOINTS = {
     "groq": "https://api.groq.com/openai/v1/chat/completions",
     "openrouter": "https://openrouter.ai/api/v1/chat/completions",
     "mistral": "https://api.mistral.ai/v1/chat/completions",
-    "huggingface": "https://router.huggingface.co/v1/chat/completions",
+    "zai": "https://api.z.ai/api/paas/v4/chat/completions",
+    "siliconflow": "https://api.siliconflow.cn/v1/chat/completions",
+    "modelscope": "https://api-inference.modelscope.cn/v1/chat/completions",
 }
 
 
@@ -51,12 +53,7 @@ def generate(cfg, messages, selected=None):
         url = "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/run/" + model
         body = {"messages": messages, "max_tokens": 650}
     else:
-        if provider == "custom":
-            url = settings.get("custom_url", "")
-            if not url.startswith("https://"):
-                raise ProviderError("Пользовательский API должен использовать HTTPS")
-        else:
-            url = ENDPOINTS.get(provider)
+        url = ENDPOINTS.get(provider)
         if not url:
             raise ProviderError("ИИ API не поддерживается")
         if provider == "openrouter" and model != "openrouter/free" and not model.endswith(":free"):

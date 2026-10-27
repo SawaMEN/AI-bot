@@ -36,7 +36,12 @@ def load_config():
     # Автоматическая миграция конфигурации v1: не теряем старый API-ключ.
     from ai_bot.catalog import PROVIDERS as NEW_PROVIDERS, model_key
     if cfg.get("provider") not in NEW_PROVIDERS:
-        raise ValueError("Неизвестный ИИ-провайдер")
+        # Старый custom/huggingface теперь исключён: без аварийного завершения
+        # отбрасываем выбор и просим настроить бесплатный провайдер.
+        cfg["provider"] = "groq"
+        cfg["api_key"] = ""
+        cfg["model"] = ""
+
     cfg["providers"] = dict(cfg.get("providers") or {})
     cfg["enabled_models"] = list(cfg.get("enabled_models") or [])
     if not cfg["providers"] and cfg.get("api_key"):
@@ -66,19 +71,29 @@ def save_config(cfg):
 
 
 def trigger_question(text, group_id, trigger="бот", replied_to_bot=False):
-    """Возвращает вопрос без обращения к боту или None."""
+    """Обращение по упоминанию в любой части фразы, даже без слова «бот»."""
     if not isinstance(text, str):
         return None
     raw = text.strip()
-    expressions = [
+    if not raw:
+        return None
+    for expression in (
         rf"^{re.escape(trigger)}(?=$|[\s,.:;!?])[\s,.:;!?]*",
         r"^/ai(?=$|[\s,.:;!?])[\s,.:;!?]*",
-        rf"^\[club{int(group_id)}\|[^\]]+\][\s,.:;!?]*",
-    ]
-    for expression in expressions:
-        matched = re.match(expression, raw, flags=re.IGNORECASE)
-        if matched:
-            return raw[matched.end():].strip()
+    ):
+        found = re.match(expression, raw, flags=re.IGNORECASE)
+        if found:
+            return raw[found.end():].strip()
+    group_id = int(group_id)
+    found = re.search(
+        rf"\[(?:club|public){group_id}\|[^\]]+\]|@(?:club|public){group_id}(?!\d)",
+        raw, flags=re.IGNORECASE
+    )
+    if found:
+        before = raw[:found.start()].rstrip(" ,.:;!?")
+        after = raw[found.end():].lstrip(" ,.:;!?")
+        # Убираем знаки рядом с упоминанием, сохраняем пунктуацию самого вопроса.
+        return (before + " " + after).strip() if after else before
     return raw if replied_to_bot else None
 
 

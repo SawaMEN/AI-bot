@@ -41,6 +41,9 @@ def configure_vk(cfg):
     print("ВК: создайте токен СООБЩЕСТВА с разрешением «Сообщения».")
     print("Разрешите Bots Long Poll: входящие сообщения. Добавьте сообщество в беседу.")
     print("Чтобы читать контекст, выдайте сообществу доступ ко всей переписке.")
+    print("В беседе: название → участники → сообщество → права → «Доступ ко всей переписке».")
+    print("Для кнопок в ВК включите событие message_event в Bots Long Poll.")
+    print("Помощь прямо в ВК: упомяните сообщество и напишите «права».")
     cfg["vk_token"] = secret("Ключ сообщества ВК", cfg.get("vk_token", ""))
     cfg["group_id"] = integer("Числовой ID сообщества", cfg["group_id"], 1, 999999999999)
     save_config(cfg)
@@ -68,7 +71,8 @@ def choose_indices(label, items, current=()):
 def edit_provider(cfg, provider):
     print("\n--- " + PROVIDERS[provider][0] + " ---")
     print("Как получить API-ключ:", PROVIDERS[provider][1] or "ваш поставщик API")
-    print("Подключение не требует установки локальной модели на VDS.")
+    print("Это внешний API, никакие модели на VDS устанавливать не нужно.")
+    print("НЕ добавляйте карту и НЕ переходите на платный тариф; бесплатные лимиты ограничены.")
     entry = cfg.setdefault("providers", {}).setdefault(provider, {})
     entry["api_key"] = secret("API-ключ", entry.get("api_key", ""))
     if not entry["api_key"]:
@@ -83,15 +87,8 @@ def edit_provider(cfg, provider):
                                            entry.get("cloudflare_account", ""))
         if not entry["cloudflare_account"]:
             print("Без Account ID этот провайдер будет недоступен.")
-    if provider == "custom":
-        print("Внимание: пользовательский API МОЖЕТ БЫТЬ ПЛАТНЫМ. Проверьте тариф и запретите платные запросы в аккаунте.")
-        entry["custom_url"] = ask("HTTPS URL /chat/completions", entry.get("custom_url", ""))
-        ident = ask("Точный ID модели", entry.get("model", ""))
-        entry["model"] = ident
-        choices = [(ident, ident)] if ident and entry["custom_url"].startswith("https://") else []
-    else:
-        choices = list(MODELS[provider])
-        if provider == "openrouter":
+    choices = list(MODELS[provider])
+    if provider == "openrouter":
             print("Автоматически запрашиваю актуальные бесплатные модели OpenRouter…")
             try:
                 dynamic = discover_openrouter(entry["api_key"])
@@ -99,10 +96,13 @@ def edit_provider(cfg, provider):
                 print("Обнаружено бесплатных моделей:", len(dynamic))
             except Exception as exc:
                 print("Каталог сейчас недоступен; доступен бесплатный автоподбор.")
-    if provider == "huggingface":
-        print("Важно: бесплатный ежемесячный лимит Hugging Face всего $0,10. После исчерпания запросы должны прекращаться без платной подписки.")
     if provider == "mistral":
         print("Используйте план Studio Free без привязанной карты. Доступные модели зависят от вашего аккаунта.")
+    if provider == "siliconflow":
+        print("Для бесплатных моделей SiliconFlow может требоваться проверка личности.")
+    if provider == "modelscope":
+        print("Выберите модели, у которых указан бесплатный провайдер ModelScope.")
+    print("ВНИМАНИЕ: только бесплатные модели из проверенного списка, без пользовательских платных ID.")
     print("Отметьте только модели, которые хотите разрешить участникам ВК.")
     current = [k.split(":", 1)[1] for k in cfg.get("enabled_models", [])
                if k.startswith(provider + ":")]
@@ -124,15 +124,15 @@ def configure_ai(cfg):
         for i, key in enumerate(keys, 1):
             flag = "ВКЛ" if key in active else "выкл"
             print(f"{i}. {PROVIDERS[key][0]} — {flag}")
-        print("8. Модель по умолчанию для новых участников")
-        print("9. Отключить провайдера")
+        print("9. Модель по умолчанию для новых участников")
+        print("10. Отключить провайдера")
         print("0. Назад / сохранить")
-        number = integer("Выберите пункт", 0, 0, 9)
+        number = integer("Выберите пункт", 0, 0, 10)
         if number == 0:
             break
         if 1 <= number <= len(keys):
             edit_provider(cfg, keys[number-1])
-        elif number == 8:
+        elif number == 9:
             allowed = enabled_models(cfg)
             if not allowed:
                 print("Сначала настройте хотя бы один провайдер.")
@@ -143,7 +143,7 @@ def configure_ai(cfg):
             index = integer("Номер модели по умолчанию", default, 1, len(allowed))
             cfg["default_model"] = allowed[index-1]
             save_config(cfg)
-        elif number == 9:
+        elif number == 10:
             for i, key in enumerate(keys, 1):
                 print(i, PROVIDERS[key][0])
             n = integer("Кого отключить", 1, 1, len(keys))
