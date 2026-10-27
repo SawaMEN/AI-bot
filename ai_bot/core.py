@@ -22,7 +22,7 @@ DEFAULTS = {
     "trigger": "бот", "context_messages": 30, "context_hours": 24,
     "retention_days": 7, "search_enabled": True, "cooldown_seconds": 15,
     "max_requests_hour": 50, "providers": {}, "enabled_models": [], "default_model": "",
-    "auto_models_providers": [],
+    "auto_models_providers": [], "free_fallback": True,
 }
 
 
