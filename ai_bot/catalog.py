@@ -72,6 +72,9 @@ def enabled_models(cfg):
             if key not in result:
                 result.append(key)
         if provider in cfg.get("auto_models_providers", []):
+            if provider == "openrouter" and "openrouter:openrouter/free" not in result:
+                # Бесплатный роутер может использоваться и при недоступности каталога.
+                result.append("openrouter:openrouter/free")
             for model, _ in verified.get(provider, []):
                 key = model_key(provider, model)
                 if key not in result:
