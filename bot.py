@@ -169,7 +169,7 @@ def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
     # Переключение только между моделями из серверного белого списка.
     # Чтобы не расходовать квоты зря, максимум одна резервная попытка.
     candidates = [selected]
-    if cfg.get("free_fallback", True):
+    if settings["fallback"]:
         others = [key for key in allowed if key != selected]
         current_provider = selected.split(":", 1)[0]
         others.sort(key=lambda key: key.split(":", 1)[0] == current_provider)
