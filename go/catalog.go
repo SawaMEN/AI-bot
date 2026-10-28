@@ -37,7 +37,48 @@ type Catalog struct {
  mu sync.RWMutex
  client *http.Client
 }
-var safeModelID=regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+\-]{0,179}$`)
+// Cloudflare Workers AI names use an @cf/ prefix. Still reject unsafe
+// characters, whitespace, query strings and a bare leading @.
+var safeModelID=regexp.MustCompile(`^(?:[A-Za-z0-9]|@[A-Za-z0-9])[A-Za-z0-9_.:/@+\-]{0,178}package main
+
+import (
+ "context"
+ _ "embed"
+ "encoding/json"
+ "errors"
+ "fmt"
+ "io"
+ "net/http"
+ "regexp"
+ "sort"
+ "strings"
+ "sync"
+ "time"
+)
+
+//go:embed providers.json
+var registryJSON []byte
+
+type Model struct {ID string; Label string}
+type ProviderSpec struct {
+ ID string `json:"id"`
+ Name string `json:"name"`
+ KeyURL string `json:"key_url"`
+ Type string `json:"type"`
+ Endpoint string `json:"endpoint"`
+ CatalogURL string `json:"catalog_url"`
+ FreePolicy string `json:"free_policy"`
+ AnonymousKey string `json:"anonymous_key"`
+ Models [][]string `json:"models"`
+}
+type Catalog struct {
+ Specs map[string]ProviderSpec
+ Order []string
+ verified map[string][]Model
+ mu sync.RWMutex
+ client *http.Client
+}
+)
 func newCatalog() (*Catalog,error) {
  var blob struct {Providers []ProviderSpec `json:"providers"`};if err:=json.Unmarshal(registryJSON,&blob);err!=nil{return nil,err}
  c:=&Catalog{Specs:map[string]ProviderSpec{},verified:map[string][]Model{},client:&http.Client{Timeout:20*time.Second}}
