@@ -135,8 +135,10 @@ def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
     current = time.monotonic()
     if current - cooldowns.get(peer, -1e8) < int(cfg["cooldown_seconds"]):
         return
-    if db.count_calls_hour() >= int(cfg["max_requests_hour"]):
-        send(cfg, peer, "Часовой лимит бесплатных запросов исчерпан. Попробуйте позже.")
+    if (db.count_calls_hour() >= int(cfg["max_requests_hour"]) or
+            db.count_calls_hour(sender_id=sender) >= int(cfg.get("max_user_requests_hour", 12)) or
+            db.count_calls_hour(peer_id=peer) >= int(cfg.get("max_chat_requests_hour", 25))):
+        send(cfg, peer, "Лимит бесплатных запросов за час исчерпан. Попробуйте позже.")
         return
 
     allowed = enabled_models(cfg)
@@ -150,7 +152,6 @@ def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
         return
 
     cooldowns[peer] = current
-    db.track_call()
     recent = db.recent(peer, settings["context_messages"], cfg["context_hours"])
     do_search = bool(cfg["search_enabled"] and (
         settings["search"] == "on" or
@@ -171,6 +172,14 @@ def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
         others.sort(key=lambda key: key.split(":", 1)[0] == current_provider)
         candidates += others[:1]
     for candidate in candidates:
+        # Считаем реальные HTTP-попытки, включая резервную. Ограничения
+        # пользователя, беседы и сервера действуют для каждой из них.
+        if (db.count_calls_hour() >= int(cfg["max_requests_hour"]) or
+                db.count_calls_hour(sender_id=sender) >= int(cfg.get("max_user_requests_hour", 12)) or
+                db.count_calls_hour(peer_id=peer) >= int(cfg.get("max_chat_requests_hour", 25))):
+            last_error = ProviderError("Лимит бесплатных запросов за час")
+            break
+        db.track_call(peer, sender)
         try:
             answer = generate(cfg, messages, selected=candidate)
             used_model = candidate
@@ -296,6 +305,9 @@ def run():
                 )
             if server_data is None:
                 server_data = vk_call(cfg, "groups.getLongPollServer", group_id=cfg["group_id"])
+                cursor = db.get_cursor(cfg["group_id"])
+                if cursor:
+                    server_data["ts"] = cursor
                 LOG.info("Подключено к ВК Long Poll")
             response = requests.get(
                 server_data["server"],
@@ -306,10 +318,13 @@ def run():
             response.raise_for_status()
             data = response.json()
             if data.get("failed") in (2, 3):
+                if data.get("failed") == 3:
+                    db.clear_cursor(cfg["group_id"])
                 server_data = None
                 continue
             if data.get("failed") == 1:
                 server_data["ts"] = data["ts"]
+                db.set_cursor(cfg["group_id"], data["ts"])
                 continue
             if data.get("failed"):
                 server_data = None
@@ -343,6 +358,8 @@ def run():
                 handled += 1
                 if handled % 100 == 0:
                     db.cleanup(cfg["retention_days"])
+            # Сохраняем позицию ПОСЛЕ обработки всей пачки событий.
+            db.set_cursor(cfg["group_id"], data["ts"])
         except (requests.RequestException, ValueError, KeyError, RuntimeError) as exc:
             LOG.warning("Long Poll: %s", exc)
             server_data = None
