@@ -95,7 +95,6 @@ func(s *Store) effective(cfg Config,peer,sender int64,c *Catalog)(string,string,
  for _,candidate:=range []string{chat.Model,user.Model}{for _,k:=range allowed{if k==candidate{model=k}}}
  // user setting wins over chat if both enabled
  if user.Model!=""{for _,k:=range allowed{if k==user.Model{model=k}}}
- }
  search:=choose(user.Search,chat.Search,"auto")
  style:=choose(user.Style,chat.Style,"normal")
  count:=cfg.ContextMessages;if chat.Context>0{count=min(count,chat.Context)};if user.Context>0{count=min(cfg.ContextMessages,user.Context)}
