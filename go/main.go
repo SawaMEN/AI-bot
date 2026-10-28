@@ -150,7 +150,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
   case 4:fmt.Fprintln(w.out,doctor(context.Background(),cfg))
   case 5:service("restart")
   case 6:cmd:=exec.Command("journalctl","-u","ai-bot","-n","60","--no-pager");cmd.Stdout=w.out;_ =cmd.Run()
-  case 7:if w.ask("Для удаления истории напишите ДА","нет")=="ДА"{s,err:=openStore(dataPath());if err==nil{s.clearMessages();s.close()}}
+  case 7:if w.ask("Для удаления истории напишите ДА","нет")=="ДА"{s,err:=openStore(dataPath());if err!=nil{fmt.Fprintln(w.out,err)}else{if err=s.clearMessages();err!=nil{fmt.Fprintln(w.out,"Ошибка очистки:",err)};s.close()}}
   case 8:if err:=webServe(cfg,c);err!=nil{fmt.Fprintln(w.out,"Веб-панель:",err)}
   case 9:w.configureVKEvents(cfg)
   }
@@ -184,7 +184,7 @@ func run()error{
  case "vk":w.setupVK(&cfg);return saveConfig(cfg)
  case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
  case "behavior":w.behavior(&cfg);return saveConfig(cfg)
- case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();s.clearMessages()
+ case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
  default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear, version")
  }
  return nil
