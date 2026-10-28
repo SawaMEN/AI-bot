@@ -142,7 +142,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
 }
 func run()error{
  cfg,err:=loadConfig();if err!=nil{return err};catalog,err:=newCatalog();if err!=nil{return err}
- command:="run";if len(os.Args)>1{command=os.Args[1]}
+ command:="menu";if len(os.Args)>1{command=os.Args[1]}
  if command=="run"{
   ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
   return runBot(ctx,cfg)
