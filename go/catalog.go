@@ -37,7 +37,8 @@ type Catalog struct {
  mu sync.RWMutex
  client *http.Client
 }
-var safeModelID=regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+\-]{0,179}$`)
+// Cloudflare Workers AI model IDs begin with @cf/. Preserve this safe prefix.
+var safeModelID=regexp.MustCompile(`^(?:[A-Za-z0-9]|@[A-Za-z0-9])[A-Za-z0-9_.:/@+\-]{0,178}$`)
 func newCatalog() (*Catalog,error) {
  var blob struct {Providers []ProviderSpec `json:"providers"`};if err:=json.Unmarshal(registryJSON,&blob);err!=nil{return nil,err}
  c:=&Catalog{Specs:map[string]ProviderSpec{},verified:map[string][]Model{},client:&http.Client{Timeout:20*time.Second}}
