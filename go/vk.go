@@ -82,11 +82,10 @@ func (v *VK) admin(ctx context.Context,peer,user int64)bool{
   MemberID int64 `json:"member_id"`
   IsAdmin bool `json:"is_admin"`
   IsOwner bool `json:"is_owner"`
-  CanKick bool `json:"can_kick"`
   Role string `json:"role"`
  } `json:"items"`}
  if json.Unmarshal(raw,&data)!=nil{return false}
- for _,m:=range data.Items{if m.MemberID==user{return m.IsAdmin||m.IsOwner||m.CanKick||m.Role=="admin"||m.Role=="owner"}}
+ for _,m:=range data.Items{if m.MemberID==user{return m.IsAdmin||m.IsOwner||m.Role=="admin"||m.Role=="owner"}}
  return false
 }
 var aiTrigger=regexp.MustCompile(`(?i)^/ai(?:$|[ ,:;.!?])`)
@@ -192,22 +191,42 @@ func buttonsFor(command string,c *Catalog,cfg Config)string{
  return mainBoard()
 }
 func callbackCommand(raw json.RawMessage)string{
+ // VK clients may send payload as JSON object or a JSON-encoded string.
+ if len(raw)>0&&raw[0]=='"' {
+  var encoded string
+  if json.Unmarshal(raw,&encoded)!=nil{return ""}
+  raw=json.RawMessage(encoded)
+ }
  var obj struct {AIbot int `json:"aibot"`; Command string `json:"command"`}
  if json.Unmarshal(raw,&obj)!=nil||obj.AIbot!=1||len(obj.Command)>90{return ""}
  // Actions are still parsed against an allowlist by command handler, not as shell commands.
  if strings.ContainsAny(obj.Command,"<>{}\n\r") {return ""}
  return obj.Command
 }
-func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage),onButton func(int64,int64,string,json.RawMessage))error{
+// vkTimestamp accepts either a VK numeric timestamp or its quoted form.
+func vkTimestamp(raw json.RawMessage)(string,error){
+ if len(raw)==0{return "",errors.New("VK timestamp отсутствует")}
+ var str string
+ if json.Unmarshal(raw,&str)!=nil{
+  var number json.Number
+  if err:=json.Unmarshal(raw,&number);err!=nil{return "",errors.New("неверный VK timestamp")}
+  str=number.String()
+ }
+ if str==""||len(str)>40{return "",errors.New("пустой или слишком длинный VK timestamp")}
+ for _,r:=range str {if r<'0'||r>'9'{return "",errors.New("недопустимый VK timestamp")}}
+ return str,nil
+}
+func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,onButton func(int64,int64,string,json.RawMessage))error{
  serverURL,key,ts:="","","";fails:=0
  for ctx.Err()==nil{
   if serverURL==""{
    vals:=url.Values{"group_id":{strconv.FormatInt(v.groupID,10)}}
    raw,err:=v.call(ctx,"groups.getLongPollServer",vals)
    if err!=nil{fails++;if !sleepContext(ctx,time.Duration(min(fails,6))*time.Second){return nil};continue}
-   var server struct{Server string `json:"server"`;Key string `json:"key"`;TS string `json:"ts"`}
+   var server struct{Server string `json:"server"`;Key string `json:"key"`;TS json.RawMessage `json:"ts"`}
    if json.Unmarshal(raw,&server)!=nil||!validHTTPS(server.Server){return errors.New("неверный VK Long Poll server")}
-   serverURL,key,ts=server.Server,server.Key,server.TS;if saved:=s.cursor(v.groupID);saved!=""{ts=saved}
+   parsedTS,err:=vkTimestamp(server.TS);if err!=nil{return err}
+   serverURL,key,ts=server.Server,server.Key,parsedTS;if saved:=s.cursor(v.groupID);saved!=""{ts=saved}
   }
   vals:=url.Values{"act":{"a_check"},"key":{key},"ts":{ts},"wait":{"25"}}
   req,err:=http.NewRequestWithContext(ctx,"GET",serverURL+"?"+vals.Encode(),nil);if err!=nil{return err}
@@ -215,23 +234,31 @@ func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage),onButto
   if err!=nil{serverURL="";if !sleepContext(ctx,3*time.Second){return nil};continue}
   data,err:=io.ReadAll(io.LimitReader(response.Body,4<<20));response.Body.Close()
   if err!=nil||response.StatusCode!=200{serverURL="";continue}
-  var batch struct{Failed int `json:"failed"`;TS string `json:"ts"`;Updates []struct{Type string `json:"type"`;Object json.RawMessage `json:"object"`} `json:"updates"`}
+  var batch struct{Failed int `json:"failed"`;TS json.RawMessage `json:"ts"`;Updates []struct{Type string `json:"type"`;Object json.RawMessage `json:"object"`} `json:"updates"`}
   if json.Unmarshal(data,&batch)!=nil{serverURL="";continue}
+  parsedTS,err:=vkTimestamp(batch.TS)
+  if err!=nil{serverURL="";continue}
   if batch.Failed!=0{
-   if batch.Failed==1{ts=batch.TS;s.setCursor(v.groupID,ts)}else{if batch.Failed==3{s.clearCursor(v.groupID)};serverURL=""};continue
+   if batch.Failed==1{ts=parsedTS;s.setCursor(v.groupID,ts)}else{if batch.Failed==3{s.clearCursor(v.groupID)};serverURL=""};continue
   }
   fails=0
   for _,evt:=range batch.Updates{
    switch evt.Type {
    case "message_new":
     var envelope struct {Message VKMessage `json:"message"`}
-    if json.Unmarshal(evt.Object,&envelope)==nil {onMessage(envelope.Message)}
+    if json.Unmarshal(evt.Object,&envelope)==nil {
+     if err:=onMessage(envelope.Message);err!=nil{
+      // Reconnect and replay the entire batch. Atomic persistence and unique
+      // event IDs prevent duplicates while preserving unsaved messages.
+      return fmt.Errorf("VK event not persisted: %w",err)
+     }
+    }
    case "message_event":
     var e struct{PeerID int64 `json:"peer_id"`;UserID int64 `json:"user_id"`;EventID string `json:"event_id"`;Payload json.RawMessage `json:"payload"`}
     if json.Unmarshal(evt.Object,&e)==nil{onButton(e.PeerID,e.UserID,e.EventID,e.Payload)}
    }
   }
-  ts=batch.TS;s.setCursor(v.groupID,ts)
+  ts=parsedTS;s.setCursor(v.groupID,ts)
  }
  return nil
 }
