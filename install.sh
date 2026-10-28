@@ -10,7 +10,7 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.3.1"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.4.0"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "Загрузка готового бинарного AI-bot Go для $ARCH..."
@@ -22,7 +22,7 @@ curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.3.1" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.4.0" || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 
@@ -46,6 +46,13 @@ if [[ -f /usr/local/lib/ai-bot/ai-bot ]]; then
 fi
 
 echo "Установка Go-версии с сохранением базы, API-ключей и настроек..."
+# The optional domain panel executes the same Go binary; stop it before
+# replacing the executable, without stopping the TLS proxy or the VPN.
+PANEL_WAS_ACTIVE=false
+if systemctl is-active --quiet ai-bot-panel.service 2>/dev/null; then
+  PANEL_WAS_ACTIVE=true
+  systemctl stop ai-bot-panel.service
+fi
 systemctl stop ai-bot.service 2>/dev/null || true
 install -m 0755 -o root -g root "$STAGING/ai-bot-linux-$ARCH" /usr/local/lib/ai-bot/ai-bot
 cat >/usr/local/bin/aibot <<'WRAPPER'
@@ -101,10 +108,21 @@ if /usr/local/bin/aibot is-configured; then
     [[ ! -f "$STAGING/config.backup" ]] || cp -a "$STAGING/config.backup" /etc/ai-bot/config.json
     systemctl daemon-reload
     systemctl restart ai-bot.service || true
+    if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+      systemctl restart ai-bot-panel.service || true
+    fi
     exit 1
+  fi
+  if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+    if ! systemctl restart ai-bot-panel.service; then
+      echo "Панель не перезапустилась. Проверьте: journalctl -u ai-bot-panel -n 50"
+    fi
   fi
   echo "AI-bot Go установлен. Меню: sudo aibot menu. Диагностика: sudo aibot doctor"
 else
   systemctl stop ai-bot.service 2>/dev/null || true
+  if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+    systemctl restart ai-bot-panel.service || true
+  fi
   echo "Бинарник установлен, но ключи не настроены. sudo aibot setup"
 fi
