@@ -123,6 +123,9 @@ def _free_pollinations(item):
         ((price.get("text") or {}).get("input"), (price.get("text") or {}).get("output"))
         if isinstance(price.get("text"), dict) else (None, None),
     ]
+    # Нулевая цена не означает доступность с бесплатным балансом.
+    if any(item.get(flag) is True for flag in ("paidOnly", "paid_only", "requires_paid", "premium")):
+        return False
     return any(_price_zero(p) and _price_zero(c) for p, c in candidates)
 
 
@@ -156,7 +159,7 @@ def _remote_models(provider, key):
             continue
         # AI Horde: волонтёрская бесплатная инфраструктура, без платных моделей.
         # У него нет тарифов за токен. Модели доступны, пока онлайн работники.
-        if provider == "aihorde" and item.get("is_premium", False):
+        if provider == "aihorde" and (item.get("is_premium", False) or item.get("paid_only", False)):
             continue
         seen.add(mid)
         found.append((mid, str(item.get("display_name") or item.get("name") or mid)[:85]))
@@ -178,7 +181,15 @@ def refresh_free_models(cfg, provider=None):
     """
     checked = cfg.setdefault("_verified_free_models", {})
     status = {}
-    targets = [provider] if provider is not None else list(cfg.get("auto_models_providers", []))
+    # Ручные динамические выборы тоже нужно перепроверять после перезапуска;
+    # иначе сохранённая вручную модель никогда не станет доступной.
+    if provider is not None:
+        targets = [provider]
+    else:
+        automatic = list(cfg.get("auto_models_providers", []))
+        manual = [key.split(":", 1)[0] for key in cfg.get("enabled_models", [])
+                  if isinstance(key, str) and ":" in key]
+        targets = list(dict.fromkeys(automatic + manual))
     for name in targets:
         if name not in SPECS:
             continue

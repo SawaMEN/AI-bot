@@ -7,6 +7,7 @@ import sys
 from ai_bot.catalog import (MODELS, PROVIDERS, SPECS, default_model,
                             enabled_models, model_key, model_label, refresh_free_models)
 from ai_bot.core import History, load_config, save_config
+from ai_bot.doctor import run_diagnostics, enable_vk_events
 
 
 def require_root():
@@ -215,6 +216,10 @@ def configure_behavior(cfg):
                                       cfg["cooldown_seconds"], 0, 3600)
     cfg["max_requests_hour"] = integer("Максимум запросов к ИИ за час",
                                        cfg["max_requests_hour"], 1, 10000)
+    cfg["max_user_requests_hour"] = integer("Запросов одного пользователя за час",
+                                            cfg.get("max_user_requests_hour", 12), 1, 1000)
+    cfg["max_chat_requests_hour"] = integer("Запросов одной беседы за час",
+                                            cfg.get("max_chat_requests_hour", 25), 1, 1000)
     print("Если бесплатная модель недоступна, разрешить попытку другой бесплатной модели?")
     cfg["free_fallback"] = ask("Автоматический резерв (д/н)",
                                "д" if cfg.get("free_fallback", True) else "н").lower() in ("д", "да", "yes", "y")
@@ -251,6 +256,9 @@ def menu():
         print("6. Последние ошибки / журнал")
         print("7. Очистить историю бесед")
         print("8. Обновить программу")
+        print("9. Проверка VK, базы и бесплатных моделей")
+        print("10. Включить события VK для кнопок (с подтверждением)")
+        print("11. Локальная веб-панель администратора через SSH")
         print("0. Выход")
         choice = input("Пункт меню: ").strip()
         if choice == "0":
@@ -278,6 +286,17 @@ def menu():
                 print("История очищена.")
         elif choice == "8":
             subprocess.run(["bash", "/opt/ai-bot/install.sh", "--update"], check=False)
+        elif choice == "9":
+            run_diagnostics(cfg)
+        elif choice == "10":
+            print("Внимание: настройка событий может затронуть другие интеграции этого сообщества.")
+            if ask("Разрешить изменить настройки Long Poll? Введите ДА", "нет") == "ДА":
+                success, message = enable_vk_events(cfg)
+                print(("Успешно: " if success else "Не получилось: ") + message)
+
+        elif choice == "11":
+            from ai_bot.web import run_web
+            run_web()
 
 
 def main():
@@ -288,12 +307,16 @@ def main():
             item.get("enabled") and (item.get("api_key") or SPECS[name].get("anonymous_key"))
             for name, item in cfg.get("providers", {}).items() if name in SPECS)
         sys.exit(0 if cfg["vk_token"] and cfg["group_id"] and connected else 1)
-    if action in ("setup", "menu", "vk", "api", "behavior", "clear", "restart"):
+    if action in ("setup", "menu", "vk", "api", "behavior", "clear", "restart", "doctor", "web"):
         require_root()
     if action == "setup":
         configure_vk(cfg)
         configure_ai(cfg)
         configure_behavior(cfg)
+        if any(item.get("enabled") for item in cfg.get("providers", {}).values()):
+            print("Настройки сохранены. Перезапускаю сервис...")
+            service("restart")
+        print("Проверка прав ВК доступна командой: sudo aibot doctor")
     elif action == "menu":
         menu()
     elif action == "vk":
@@ -312,6 +335,11 @@ def main():
         service("restart")
     elif action == "status":
         show_status(cfg)
+    elif action == "doctor":
+        return 0 if run_diagnostics(cfg) else 1
+    elif action == "web":
+        from ai_bot.web import run_web
+        run_web()
     elif action == "logs":
         subprocess.run(["journalctl", "-u", "ai-bot", "-n", "60", "--no-pager"], check=False)
     else:
@@ -319,4 +347,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

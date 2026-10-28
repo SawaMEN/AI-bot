@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """AI-bot для ВК. Один процесс, SQLite, Bots Long Poll."""
+import contextvars
+import hashlib
 import json
 import logging
+import queue
+import threading
 import signal
 import sys
 import time
@@ -20,6 +24,7 @@ LOG = logging.getLogger("aibot")
 VK_API = "https://api.vk.com/method/"
 VK_VERSION = "5.199"
 STOP = False
+_SEND_ID = contextvars.ContextVar("vk_response_random_id", default=None)
 
 SYSTEM = (
     "Ты полезный ИИ-участник беседы ВКонтакте. Отвечай по-русски ясно и кратко, "
@@ -52,7 +57,7 @@ def send(cfg, peer, text, menu=False, keyboard=None):
         keyboard = for_command("меню", cfg)
     params = {"keyboard": keyboard} if keyboard is not None else {}
     vk_call(cfg, "messages.send", peer_id=peer,
-            random_id=__import__("secrets").randbelow(2147483647) + 1,
+            random_id=_SEND_ID.get() or (__import__("secrets").randbelow(2147483647) + 1),
             message=text, **params)
 
 
@@ -93,7 +98,7 @@ def is_chat_admin(cfg, peer, sender):
     return False
 
 
-def handle_message(cfg, db, item, cooldowns):
+def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
     if not isinstance(item, dict) or item.get("out"):
         return
     try:
@@ -109,7 +114,7 @@ def handle_message(cfg, db, item, cooldowns):
     message_id = item.get("conversation_message_id") or item.get("id")
     if not message_id:
         return
-    if not db.add(peer, sender, f"vk:{peer}:{message_id}", text):
+    if not pre_recorded and not db.add(peer, sender, f"vk:{peer}:{message_id}", text):
         return
 
     reply = item.get("reply_message") or {}
@@ -133,8 +138,10 @@ def handle_message(cfg, db, item, cooldowns):
     current = time.monotonic()
     if current - cooldowns.get(peer, -1e8) < int(cfg["cooldown_seconds"]):
         return
-    if db.count_calls_hour() >= int(cfg["max_requests_hour"]):
-        send(cfg, peer, "Часовой лимит бесплатных запросов исчерпан. Попробуйте позже.")
+    if (db.count_calls_hour() >= int(cfg["max_requests_hour"]) or
+            db.count_calls_hour(sender_id=sender) >= int(cfg.get("max_user_requests_hour", 12)) or
+            db.count_calls_hour(peer_id=peer) >= int(cfg.get("max_chat_requests_hour", 25))):
+        send(cfg, peer, "Лимит бесплатных запросов за час исчерпан. Попробуйте позже.")
         return
 
     allowed = enabled_models(cfg)
@@ -148,7 +155,6 @@ def handle_message(cfg, db, item, cooldowns):
         return
 
     cooldowns[peer] = current
-    db.track_call()
     recent = db.recent(peer, settings["context_messages"], cfg["context_hours"])
     do_search = bool(cfg["search_enabled"] and (
         settings["search"] == "on" or
@@ -163,12 +169,20 @@ def handle_message(cfg, db, item, cooldowns):
     # Переключение только между моделями из серверного белого списка.
     # Чтобы не расходовать квоты зря, максимум одна резервная попытка.
     candidates = [selected]
-    if cfg.get("free_fallback", True):
+    if settings["fallback"]:
         others = [key for key in allowed if key != selected]
         current_provider = selected.split(":", 1)[0]
         others.sort(key=lambda key: key.split(":", 1)[0] == current_provider)
         candidates += others[:1]
     for candidate in candidates:
+        # Считаем реальные HTTP-попытки, включая резервную. Ограничения
+        # пользователя, беседы и сервера действуют для каждой из них.
+        if (db.count_calls_hour() >= int(cfg["max_requests_hour"]) or
+                db.count_calls_hour(sender_id=sender) >= int(cfg.get("max_user_requests_hour", 12)) or
+                db.count_calls_hour(peer_id=peer) >= int(cfg.get("max_chat_requests_hour", 25))):
+            last_error = ProviderError("Лимит бесплатных запросов за час")
+            break
+        db.track_call(peer, sender)
         try:
             answer = generate(cfg, messages, selected=candidate)
             used_model = candidate
@@ -219,6 +233,65 @@ def handle_button_event(cfg, db, data):
     if result is not None:
         send(cfg, peer, result, keyboard=for_command(command, cfg))
 
+def record_incoming(db, item):
+    """Главный поток сохраняет сообщения ВСЕХ участников до запуска ИИ."""
+    if not isinstance(item, dict) or item.get("out"):
+        return False
+    try:
+        peer, sender = int(item["peer_id"]), int(item["from_id"])
+        mid = item.get("conversation_message_id") or item.get("id")
+        content = str(item.get("text") or "").strip()
+        if sender <= 0 or not mid or not content:
+            return False
+        return db.add(peer, sender, f"vk:{peer}:{mid}", content)
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def answer_worker(cfg, jobs, stop_event, db_path=None):
+    """Обработка в отдельном потоке; недоставленные задания переживают перезапуск."""
+    db = History(db_path) if db_path is not None else History()
+    cooldowns = {}
+    try:
+        while not stop_event.is_set() or not jobs.empty():
+            sourced_from_queue = False
+            try:
+                item = jobs.get(timeout=0.5)
+                sourced_from_queue = True
+            except queue.Empty:
+                waiting = db.pending()
+                if not waiting:
+                    continue
+                item, _ = waiting
+            if not db.is_pending(item):
+                if sourced_from_queue:
+                    jobs.task_done()
+                continue
+            # Повторная обработка не создаст второй ответ в VK:
+            # random_id стабилен для конкретного входящего обращения.
+            data = (str(cfg["group_id"]) + ":" + db.pending_id(item)).encode()
+            random_id = int.from_bytes(hashlib.sha256(data).digest()[:4], "big") & 0x7fffffff
+            token = _SEND_ID.set(random_id or 1)
+            try:
+                handle_message(cfg, db, item, cooldowns, pre_recorded=True)
+                db.finish_pending(item)
+            except Exception:
+                db.retry_pending(item)
+                LOG.exception("Ошибка обработки обращения; сообщение останется в очереди")
+                waiting = db.pending()
+                if waiting and db.pending_id(waiting[0]) == db.pending_id(item) and waiting[1] >= 3:
+                    db.finish_pending(item)
+                    LOG.error("Обращение отброшено после 3 ошибок")
+                else:
+                    time.sleep(2)
+            finally:
+                _SEND_ID.reset(token)
+                if sourced_from_queue:
+                    jobs.task_done()
+    finally:
+        db.db.close()
+
+
 def run():
     cfg = load_config()
     # Каталог подгружается в оперативную память. Неизвестные цены и сбои API
@@ -235,7 +308,11 @@ def run():
         LOG.warning("Каталог недоступен: бот запущен без моделей. Повторная проверка через 10 минут.")
     db = History()
     db.cleanup(cfg["retention_days"])
-    cooldowns = {}
+    jobs = queue.Queue(maxsize=128)
+    worker_stop = threading.Event()
+    worker = threading.Thread(target=answer_worker, args=(cfg, jobs, worker_stop),
+                              daemon=True, name="ai-answers")
+    worker.start()
     server_data = None
     retries = 0
     handled = 0
@@ -255,6 +332,9 @@ def run():
                 )
             if server_data is None:
                 server_data = vk_call(cfg, "groups.getLongPollServer", group_id=cfg["group_id"])
+                cursor = db.get_cursor(cfg["group_id"])
+                if cursor:
+                    server_data["ts"] = cursor
                 LOG.info("Подключено к ВК Long Poll")
             response = requests.get(
                 server_data["server"],
@@ -265,10 +345,13 @@ def run():
             response.raise_for_status()
             data = response.json()
             if data.get("failed") in (2, 3):
+                if data.get("failed") == 3:
+                    db.clear_cursor(cfg["group_id"])
                 server_data = None
                 continue
             if data.get("failed") == 1:
                 server_data["ts"] = data["ts"]
+                db.set_cursor(cfg["group_id"], data["ts"])
                 continue
             if data.get("failed"):
                 server_data = None
@@ -284,17 +367,32 @@ def run():
                     if event_type == "message_event":
                         handle_button_event(cfg, db, obj)
                     else:
-                        handle_message(cfg, db, obj.get("message", obj), cooldowns)
+                        item = obj.get("message", obj)
+                        if record_incoming(db, item):
+                            reply = item.get("reply_message") or {}
+                            question = trigger_question(
+                                item.get("text", ""), cfg["group_id"], cfg["trigger"],
+                                isinstance(reply, dict) and reply.get("from_id") == -int(cfg["group_id"]))
+                            if question is not None and db.enqueue(item):
+                                try:
+                                    jobs.put_nowait(item)
+                                except queue.Full:
+                                    LOG.warning("Очередь ИИ заполнена; запрос сохранён и будет обработан позже")
                 except Exception:
                     LOG.exception("Ошибка обработки события ВК")
                 handled += 1
                 if handled % 100 == 0:
                     db.cleanup(cfg["retention_days"])
+            # Сохраняем позицию ПОСЛЕ обработки всей пачки событий.
+            db.set_cursor(cfg["group_id"], data["ts"])
         except (requests.RequestException, ValueError, KeyError, RuntimeError) as exc:
             LOG.warning("Long Poll: %s", exc)
             server_data = None
             retries = min(retries + 1, 6)
             time.sleep(min(2 ** retries, 60))
+    worker_stop.set()
+    worker.join(timeout=5)
+    db.db.close()
 
 
 if __name__ == "__main__":

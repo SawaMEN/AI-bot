@@ -23,7 +23,8 @@ def main_menu():
         [button("Выбрать ИИ", "модели 1"), button("Мои настройки", "настройки")],
         [button("Поиск", "выбор поиска"), button("Стиль ответа", "выбор стиля")],
         [button("Контекст", "выбор контекста"), button("Настройки беседы", "диалог")],
-        [button("Права и подключение", "права"), button("Помощь", "помощь")],
+        [button("Резервный ИИ", "выбор резерва"), button("Помощь", "помощь")],
+        [button("Права и подключение", "права")],
     ])
 
 
@@ -81,6 +82,16 @@ def context_menu(cfg, chat=False):
     return keyboard(rows)
 
 
+
+def fallback_menu(chat=False):
+    prefix = "диалог " if chat else ""
+    return keyboard([
+        [button("Разрешить резерв", prefix + "резерв вкл"),
+         button("Запретить резерв", prefix + "резерв выкл")],
+        [button("По умолчанию", prefix + "резерв авто"), button("Меню", "меню")],
+    ])
+
+
 def for_command(command, cfg):
     """Клавиатура к ответу команды в VK; None = без кнопок."""
     normalized = command.lower().strip()
@@ -93,6 +104,8 @@ def for_command(command, cfg):
         return style_menu(normalized.startswith("диалог "))
     if normalized in ("выбор контекста", "диалог выбор контекста"):
         return context_menu(cfg, normalized.startswith("диалог "))
+    if normalized in ("выбор резерва", "диалог выбор резерва"):
+        return fallback_menu(normalized.startswith("диалог "))
     parts = normalized.split()
     if parts and parts[0] == "модели":
         page = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 1
@@ -108,6 +121,8 @@ def for_command(command, cfg):
         return style_menu(normalized.startswith("диалог "))
     if "контекст" in parts:
         return context_menu(cfg, normalized.startswith("диалог "))
+    if "резерв" in parts:
+        return fallback_menu(normalized.startswith("диалог "))
     return None
 
 
@@ -117,8 +132,9 @@ def chat_menu():
          button("Поиск беседы", "диалог выбор поиска")],
         [button("Стиль беседы", "диалог выбор стиля"),
          button("Контекст беседы", "диалог выбор контекста")],
-        [button("Сбросить беседу", "диалог сброс"),
+        [button("Резерв беседы", "диалог выбор резерва"),
          button("Права доступа", "права")],
+        [button("Сбросить беседу", "диалог сброс")],
         [button("Меню", "меню")],
     ])
 
@@ -137,12 +153,12 @@ def callback_command(event):
     if not isinstance(command, str) or len(command) > 90:
         return None
     if command not in ("меню", "помощь", "настройки", "диалог", "права",
-                       "выбор поиска", "выбор стиля", "выбор контекста",
+                       "выбор поиска", "выбор стиля", "выбор контекста", "выбор резерва",
                        "диалог выбор поиска", "диалог выбор стиля",
-                       "диалог выбор контекста") and not (
-        command.startswith(("модели ", "модель ", "поиск ", "стиль ", "контекст ",
+                       "диалог выбор контекста", "диалог выбор резерва") and not (
+        command.startswith(("модели ", "модель ", "поиск ", "стиль ", "контекст ", "резерв ",
                             "диалог модели ", "диалог модель ", "диалог поиск ",
-                            "диалог стиль ", "диалог контекст "))
+                            "диалог стиль ", "диалог контекст ", "диалог резерв "))
         or command == "диалог сброс"
     ):
         return None
