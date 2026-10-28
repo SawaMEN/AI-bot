@@ -66,7 +66,9 @@ func (s *Store) recordAndQueue(m VKMessage,mentioned bool)(bool,error){
   // Do not persist unbounded VK payloads: the durable queue contains the
   // same clipped text as the history. This also bounds downstream AI prompts.
   m.Text=string(txt)
-  m.ReplyMessage=nil
+  if m.ReplyMessage!=nil{
+   m.ReplyMessage=&VKMessage{FromID:m.ReplyMessage.FromID}
+  }
   payload,err:=json.Marshal(m);if err!=nil{return false,err}
   if _,err=tx.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",
    m.EventID(),string(payload),time.Now().Unix());err!=nil{return false,err}
