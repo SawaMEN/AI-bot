@@ -49,6 +49,10 @@ echo "Установка Go-версии с сохранением базы, API
 # The optional domain panel executes the same Go binary; stop it before
 # replacing the executable, without stopping the TLS proxy or the VPN.
 PANEL_WAS_ACTIVE=false
+PANEL_TLS_WAS_ACTIVE=false
+if systemctl is-active --quiet ai-bot-panel-tls.service 2>/dev/null; then
+  PANEL_TLS_WAS_ACTIVE=true
+fi
 if systemctl is-active --quiet ai-bot-panel.service 2>/dev/null; then
   PANEL_WAS_ACTIVE=true
   systemctl stop ai-bot-panel.service
@@ -111,6 +115,9 @@ if /usr/local/bin/aibot is-configured; then
     if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
       systemctl restart ai-bot-panel.service || true
     fi
+    if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+      systemctl restart ai-bot-panel-tls.service || true
+    fi
     exit 1
   fi
   if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
@@ -118,11 +125,19 @@ if /usr/local/bin/aibot is-configured; then
       echo "Панель не перезапустилась. Проверьте: journalctl -u ai-bot-panel -n 50"
     fi
   fi
+  if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+    if ! systemctl restart ai-bot-panel-tls.service; then
+      echo "HTTPS-панель не запустилась. Проверьте journalctl -u ai-bot-panel-tls"
+    fi
+  fi
   echo "AI-bot Go установлен. Меню: sudo aibot menu. Диагностика: sudo aibot doctor"
 else
   systemctl stop ai-bot.service 2>/dev/null || true
   if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
     systemctl restart ai-bot-panel.service || true
+  fi
+  if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+    systemctl restart ai-bot-panel-tls.service || true
   fi
   echo "Бинарник установлен, но ключи не настроены. sudo aibot setup"
 fi
