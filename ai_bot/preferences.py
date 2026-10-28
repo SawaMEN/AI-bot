@@ -14,21 +14,25 @@ def init_preferences(db):
         search TEXT,
         style TEXT,
         context_messages INTEGER,
+        fallback TEXT,
         PRIMARY KEY (scope, scope_id)
     )""")
+    cols = {row[1] for row in db.execute("PRAGMA table_info(preferences)")}
+    if "fallback" not in cols:
+        db.execute("ALTER TABLE preferences ADD COLUMN fallback TEXT")
     db.commit()
 
 
 def get_pref(db, scope, ident):
-    row = db.execute("""SELECT model, search, style, context_messages
+    row = db.execute("""SELECT model, search, style, context_messages, fallback
         FROM preferences WHERE scope=? AND scope_id=?""", (scope, int(ident))).fetchone()
     if not row:
         return {}
-    return dict(zip(("model", "search", "style", "context_messages"), row))
+    return dict(zip(("model", "search", "style", "context_messages", "fallback"), row))
 
 
 def set_pref(db, scope, ident, field, value):
-    if scope not in ("user", "chat") or field not in ("model", "search", "style", "context_messages"):
+    if scope not in ("user", "chat") or field not in ("model", "search", "style", "context_messages", "fallback"):
         raise ValueError("Недопустимый параметр")
     with db:
         db.execute("INSERT OR IGNORE INTO preferences(scope,scope_id) VALUES (?,?)",
@@ -60,5 +64,8 @@ def effective(db, cfg, peer_id, sender_id, allowed):
     count = next((v for v in (user.get("context_messages"), chat.get("context_messages"),
                               cfg["context_messages"]) if isinstance(v, int)
                   and not isinstance(v, bool) and v > 0), 30)
+    fallback = next((v for v in (user.get("fallback"), chat.get("fallback"), "on")
+                     if v in ("on", "off")), "on")
     return {"model": model, "search": search, "style": style,
+            "fallback": bool(cfg.get("free_fallback", True)) and fallback == "on",
             "context_messages": min(int(cfg["context_messages"]), int(count))}
