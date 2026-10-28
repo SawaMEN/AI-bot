@@ -12,6 +12,7 @@ import (
  "regexp"
  "strconv"
  "strings"
+ "sync"
  "time"
 )
 
@@ -89,6 +90,14 @@ func (v *VK) admin(ctx context.Context,peer,user int64)bool{
  return false
 }
 var aiTrigger=regexp.MustCompile(`(?i)^/ai(?:$|[ ,:;.!?])`)
+var mentionExpressions sync.Map
+
+func mentionExpression(groupID int64)*regexp.Regexp {
+ if cached,ok:=mentionExpressions.Load(groupID);ok{return cached.(*regexp.Regexp)}
+ exp:=regexp.MustCompile(`(?i)\[(club|public)`+strconv.FormatInt(groupID,10)+`\|[^]]+\]|@(club|public)`+strconv.FormatInt(groupID,10)+`\b`)
+ actual,_:=mentionExpressions.LoadOrStore(groupID,exp)
+ return actual.(*regexp.Regexp)
+}
 func questionFor(cfg Config,m VKMessage) (string,bool) {
  if !m.Valid(){return "",false}
  text:=strings.TrimSpace(m.Text)
@@ -97,9 +106,7 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
   if rest==""||strings.ContainsRune(" ,.:;!?\t\n",rune(rest[0])) {return strings.TrimSpace(strings.TrimLeft(rest," ,.:;!?")),true}
  }
  if aiTrigger.MatchString(text){return strings.TrimSpace(strings.TrimLeft(text[3:]," ,.:;!?")),true}
- group:=strconv.FormatInt(cfg.GroupID,10)
- re:=regexp.MustCompile(`(?i)\[(club|public)`+group+`\|[^]]+\]|@(club|public)`+group+`\b`)
- loc:=re.FindStringIndex(text)
+ loc:=mentionExpression(cfg.GroupID).FindStringIndex(text)
  if loc!=nil{
   before:=strings.TrimRight(text[:loc[0]]," ,.:;!?")
   after:=strings.TrimLeft(text[loc[1]:]," ,.:;!?")
