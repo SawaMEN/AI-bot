@@ -89,7 +89,7 @@ def fallback_menu(chat=False):
         [button("Разрешить резерв", prefix + "резерв вкл"),
          button("Запретить резерв", prefix + "резерв выкл")],
         [button("По умолчанию", prefix + "резерв авто"), button("Меню", "меню")],
-    )
+    ])
 
 
 def for_command(command, cfg):
