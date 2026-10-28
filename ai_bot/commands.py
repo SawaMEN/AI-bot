@@ -188,7 +188,7 @@ def process_command(cfg, db, peer, sender, question, chat_admin=None):
             return "Настройки беседы может менять только администратор. Проверить права через ВК не удалось или прав недостаточно."
         result = apply_setting(db.db, cfg, "chat", peer, args, allowed)
         return "Настройки беседы. " + result if result else "Пример: бот диалог модель 2"
-    if cmd in ("модель", "поиск", "стиль", "контекст", "сброс", "сбросить"):
+    if cmd in ("модель", "поиск", "стиль", "контекст", "резерв", "сброс", "сбросить"):
         result = apply_setting(db.db, cfg, "user", sender, [cmd] + args, allowed)
         return "Ваши настройки. " + result if result else "Список команд: бот меню"
     return None
