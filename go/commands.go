@@ -70,7 +70,8 @@ func cmdApply(s *Store,c *Catalog,cfg Config,scope string,ident int64,parts []st
   result="Резервная бесплатная модель: "+value
  default:return "Неизвестная настройка. Откройте «меню»."
  }
- if err:=s.setPref(scope,ident,field,save);err!=nil{return "Ошибка сохранения настройки: "+err.Error()}
+ columns:=map[string]string{"модель":"model","поиск":"search","стиль":"style","контекст":"context_messages","резерв":"fallback"}
+ if err:=s.setPref(scope,ident,columns[field],save);err!=nil{return "Ошибка сохранения настройки: "+err.Error()}
  return result
 }
 func processCommand(ctx context.Context,v *VK,s *Store,c *Catalog,cfg Config,peer,user int64,question string)(string,bool){
