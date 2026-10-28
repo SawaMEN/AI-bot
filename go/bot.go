@@ -58,7 +58,9 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  for _,candidate:=range candidates{
   total,chat,user=b.store.counts(m.PeerID,m.FromID)
   if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{lastErr=errors.New("бесплатная квота за час");break}
-  b.store.track(m.PeerID,m.FromID)
+  if err:=b.store.track(m.PeerID,m.FromID);err!=nil{
+   return b.send(ctx,m,"Ошибка учёта бесплатных запросов. Администратор должен проверить SQLite.",mainBoard())
+  }
   cctx,cancel:=context.WithTimeout(ctx,65*time.Second)
   text,lastErr=b.ai.generate(cctx,b.cfg,candidate,messages);cancel()
   if lastErr==nil&&strings.TrimSpace(text)!=""{used=candidate;break}
@@ -71,7 +73,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.send(ctx,m,text,"");err!=nil{return err}
- b.store.answer(m,text)
+ b.store.answer(m,text,b.cfg.GroupID)
  return nil
 }
 func(b *Bot) processPending(ctx context.Context){
@@ -86,14 +88,11 @@ func(b *Bot) processPending(ctx context.Context){
   }else{b.store.finish(m)}
  }
 }
-func(b *Bot) event(ctx context.Context,m VKMessage) {
- if !m.Valid(){return}
- recorded,err:=b.store.record(m)
- if err!=nil{log.Printf("SQLite record: %v",err);return}
- if !recorded{return}
- if _,mentioned:=questionFor(b.cfg,m);mentioned{
-  if err:=b.store.enqueue(m);err!=nil{log.Printf("SQLite queue: %v",err)}
- }
+func (b *Bot) event(ctx context.Context,m VKMessage) error {
+ if !m.Valid(){return nil}
+ _,mentioned:=questionFor(b.cfg,m)
+ _,err:=b.store.recordAndQueue(m,mentioned)
+ return err
 }
 func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload []byte){
  if peer<=0||user<=0||eventID==""{return}
@@ -129,7 +128,7 @@ func runBot(ctx context.Context,cfg Config)error{
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
  // use fast settings queries, while queued generation runs independently.
- err=vkPoll(ctx,b.vk,store,func(m VKMessage){b.event(ctx,m)},func(peer,user int64,event string,payload json.RawMessage){go b.button(ctx,peer,user,event,payload)})
+ err=vkPoll(ctx,b.vk,store,func(m VKMessage)error{return b.event(ctx,m)},func(peer,user int64,event string,payload json.RawMessage){go b.button(ctx,peer,user,event,payload)})
  if errors.Is(err,context.Canceled){return nil};return err
 }
 func vkDiagnostics(ctx context.Context,cfg Config)string{
