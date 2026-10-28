@@ -30,7 +30,14 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",mainBoard())
  }
  b.cooldowns[m.PeerID]=time.Now()
- recent:=b.store.recent(m.PeerID,count,b.cfg.ContextHours)
+ recent:=b.store.recent(m.PeerID,min(count+1,100),b.cfg.ContextHours)
+ // The current VK message is already saved to history. Do not send it again
+ // inside the history AND as the explicit question to the model.
+ if len(recent)>0{
+  last:=recent[len(recent)-1]
+  if last.Sender==m.FromID&&last.Text==m.Text{recent=recent[:len(recent)-1]}
+ }
+ if len(recent)>count{recent=recent[len(recent)-count:]}
  var convo strings.Builder
  for _,turn:=range recent {
   name:=fmt.Sprintf("Участник %d",turn.Sender);if turn.Sender<0{name="Бот"}
