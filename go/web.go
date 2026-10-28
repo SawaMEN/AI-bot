@@ -3,9 +3,11 @@ package main
 import (
  "context"
  "crypto/rand"
+ "crypto/sha256"
  "crypto/subtle"
  _ "embed"
  "encoding/base64"
+ "encoding/hex"
  "errors"
  "fmt"
  "html/template"
@@ -23,58 +25,111 @@ import (
 var adminHTML string
 type webProvider struct{ID,Name,URL string;Enabled,Auto bool}
 type webField struct{Key,Label string;Value int}
-type webData struct{CSRF,Notice string;Allowed []string;Labels map[string]string;Providers []webProvider;Fields []webField;Search,Fallback bool}
-func secretToken()string{raw:=make([]byte,24);_,_=rand.Read(raw);return base64.RawURLEncoding.EncodeToString(raw)}
+type webData struct{CSRF,Notice string;Allowed []string;Labels map[string]string;Providers []webProvider;Fields []webField;Search,Fallback bool;Domain string}
+func secretToken()string{
+ raw:=make([]byte,24)
+ if _,err:=rand.Read(raw);err!=nil{panic("не удалось сгенерировать пароль")}
+ return base64.RawURLEncoding.EncodeToString(raw)
+}
+// The ephemeral local password is printed once. The domain panel stores
+// only a SHA-256 hash of a random 256-bit password in a 0600 root-owned file.
 func webServe(_ Config,c *Catalog)error{
+ password:=secretToken()
+ fmt.Println("Создайте SSH-туннель: ssh -L 8765:127.0.0.1:8765 USER@SERVER")
+ fmt.Println("Адрес: http://127.0.0.1:8765 | логин: admin | одноразовый пароль:",password)
+ return servePanelHTTP(c,panelDigest(password),"")
+}
+func webServeDomain(c *Catalog)error{
+ panel,err:=loadPanelConfig();if err!=nil{return err}
+ return servePanelHTTP(c,panel.PasswordHash,panel.Domain)
+}
+func servePanelHTTP(c *Catalog,hash,domain string)error{
  cfg,err:=loadConfig();if err!=nil{return err}
- ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);c.refresh(ctx,cfg);cancel()
- secret:=secretToken();csrf:=secretToken()
+ ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
+ c.refresh(ctx,cfg);cancel()
+ listener,err:=net.Listen("tcp","127.0.0.1:8765");if err!=nil{return err}
+ defer listener.Close()
+ srv:=&http.Server{Handler:panelHTTPHandler(c,hash,domain),
+  ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,
+  WriteTimeout:30*time.Second,IdleTimeout:60*time.Second}
+ return srv.Serve(listener)
+}
+func panelHTTPHandler(c *Catalog,hash,domain string)http.Handler{
+ csrf:=secretToken()
  var notice atomic.Value
  notice.Store("")
- tmpl,err:=template.New("admin").Parse(adminHTML);if err!=nil{return err}
- listener,err:=net.Listen("tcp","127.0.0.1:8765");if err!=nil{return err};defer listener.Close()
- fmt.Println("Создайте SSH-туннель на своём компьютере: ssh -L 8765:127.0.0.1:8765 USER@SERVER")
- fmt.Println("Адрес: http://127.0.0.1:8765 | логин: admin | одноразовый пароль:",secret)
+ tmpl:=template.Must(template.New("admin").Parse(adminHTML))
+ expectedHash,err:=hex.DecodeString(hash)
+ if err!=nil||len(expectedHash)!=sha256.Size{panic("неверный хеш пароля панели")}
  mux:=http.NewServeMux()
  mux.HandleFunc("/",func(w http.ResponseWriter,r *http.Request){
-  w.Header().Set("Cache-Control","no-store");w.Header().Set("X-Frame-Options","DENY");w.Header().Set("X-Content-Type-Options","nosniff")
+  w.Header().Set("Cache-Control","no-store")
+  w.Header().Set("X-Frame-Options","DENY")
+  w.Header().Set("X-Content-Type-Options","nosniff")
+  w.Header().Set("Referrer-Policy","no-referrer")
   w.Header().Set("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
-  if r.Host!="127.0.0.1:8765"&&r.Host!="localhost:8765"{http.Error(w,"bad host",400);return}
+  // Only the local loopback or the exact, configured TLS domain is trusted.
+  local:=r.Host=="127.0.0.1:8765"||r.Host=="localhost:8765"
+  public:=domain!=""&&r.Host==domain&&r.Header.Get("X-Forwarded-Proto")=="https"
+  if !local&&!public{http.Error(w,"bad host or insecure proxy",400);return}
   user,password,ok:=r.BasicAuth()
-  if !ok||subtle.ConstantTimeCompare([]byte(user),[]byte("admin"))!=1||subtle.ConstantTimeCompare([]byte(password),[]byte(secret))!=1{
-   w.Header().Set("WWW-Authenticate","Basic realm=\"AI-bot\"");http.Error(w,"Unauthorized",401);return
+  digest:=sha256.Sum256([]byte(password))
+  if !ok||subtle.ConstantTimeCompare([]byte(user),[]byte("admin"))!=1||
+   subtle.ConstantTimeCompare(digest[:],expectedHash)!=1{
+   w.Header().Set("WWW-Authenticate","Basic realm=\"AI-bot\"")
+   http.Error(w,"Unauthorized",401)
+   return
   }
   if r.URL.Path!="/"{http.NotFound(w,r);return}
   if r.Method=="POST"{
-   r.Body=http.MaxBytesReader(w,r.Body,8192);if r.ParseForm()!=nil{http.Error(w,"bad form",400);return}
-   if subtle.ConstantTimeCompare([]byte(r.Form.Get("csrf")),[]byte(csrf))!=1{http.Error(w,"CSRF",403);return}
+   r.Body=http.MaxBytesReader(w,r.Body,8192)
+   if r.ParseForm()!=nil{http.Error(w,"bad form",400);return}
+   if subtle.ConstantTimeCompare([]byte(r.Form.Get("csrf")),[]byte(csrf))!=1{
+    http.Error(w,"CSRF",403);return
+   }
    current,err:=loadConfig();if err!=nil{http.Error(w,"config read error",500);return}
    status,err:=applyWebForm(&current,c,r.Form)
-   if err!=nil{status="Ошибка: "+err.Error()}else if r.Form.Get("action")=="restart"{
-    ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second)
-    cmd:=exec.CommandContext(ctx,"systemctl","restart","ai-bot")
+   if err!=nil{status="Ошибка: "+err.Error()
+   }else if r.Form.Get("action")=="restart"{
+    restartCtx,restartCancel:=context.WithTimeout(r.Context(),12*time.Second)
+    cmd:=exec.CommandContext(restartCtx,"systemctl","restart","ai-bot")
     cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
     if cmd.Run()!=nil{status="Не удалось перезапустить службу"}
-    cancel()
+    restartCancel()
    }else{
     if err=saveConfig(current);err!=nil{status="Ошибка сохранения: "+err.Error()}
     if err==nil&&r.Form.Get("action")=="provider"{
-     ctx,cancel:=context.WithTimeout(r.Context(),20*time.Second);c.refresh(ctx,current);cancel()
+     refreshCtx,refreshCancel:=context.WithTimeout(r.Context(),20*time.Second)
+     c.refresh(refreshCtx,current);refreshCancel()
     }
    }
    notice.Store(status)
-   http.Redirect(w,r,"/",http.StatusSeeOther);return
+   http.Redirect(w,r,"/",http.StatusSeeOther)
+   return
   }
   if r.Method!="GET"{http.Error(w,"method",405);return}
   current,err:=loadConfig();if err!=nil{http.Error(w,"config error",500);return}
-  list:=c.enabled(current);data:=webData{CSRF:csrf,Notice:notice.Load().(string),Allowed:list,Labels:map[string]string{},Search:current.SearchEnabled,Fallback:current.FreeFallback}
+  list:=c.enabled(current)
+  data:=webData{CSRF:csrf,Notice:notice.Load().(string),Allowed:list,
+   Labels:map[string]string{},Search:current.SearchEnabled,
+   Fallback:current.FreeFallback,Domain:domain}
   for _,id:=range list{data.Labels[id]=c.label(id)}
-  for _,id:=range c.Order{p:=c.Specs[id];settings:=current.Providers[id];data.Providers=append(data.Providers,webProvider{id,p.Name,p.KeyURL,settings.Enabled,contains(current.AutoModelsProviders,id)})}
-  data.Fields=[]webField{{"context_messages","Макс. сообщений контекста",current.ContextMessages},{"context_hours","Часов контекста",current.ContextHours},{"retention_days","Дней хранения",current.RetentionDays},{"max_requests_hour","Общий лимит в час",current.MaxRequestsHour},{"max_user_requests_hour","Лимит участника",current.MaxUserRequestsHour},{"max_chat_requests_hour","Лимит беседы",current.MaxChatRequestsHour}}
-  w.Header().Set("Content-Type","text/html; charset=utf-8");_ =tmpl.Execute(w,data)
+  for _,id:=range c.Order{
+   p:=c.Specs[id];settings:=current.Providers[id]
+   data.Providers=append(data.Providers,webProvider{id,p.Name,p.KeyURL,settings.Enabled,contains(current.AutoModelsProviders,id)})
+  }
+  data.Fields=[]webField{
+   {"context_messages","Макс. сообщений контекста",current.ContextMessages},
+   {"context_hours","Часов контекста",current.ContextHours},
+   {"retention_days","Дней хранения",current.RetentionDays},
+   {"max_requests_hour","Общий лимит в час",current.MaxRequestsHour},
+   {"max_user_requests_hour","Лимит участника",current.MaxUserRequestsHour},
+   {"max_chat_requests_hour","Лимит беседы",current.MaxChatRequestsHour},
+  }
+  w.Header().Set("Content-Type","text/html; charset=utf-8")
+  _=tmpl.Execute(w,data)
  })
- srv:=&http.Server{Handler:mux,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,WriteTimeout:30*time.Second}
- return srv.Serve(listener)
+ return mux
 }
 func applyWebForm(cfg *Config,c *Catalog,form url.Values)(string,error){
  switch form.Get("action"){
