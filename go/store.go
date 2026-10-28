@@ -36,10 +36,11 @@ func openStore(path string)(*Store,error){
   "CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS preferences(scope TEXT NOT NULL,scope_id INTEGER NOT NULL,model TEXT,search TEXT,style TEXT,context_messages INTEGER,PRIMARY KEY(scope,scope_id))",
   "CREATE TABLE IF NOT EXISTS pending(event_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS idx_pending_created ON pending(created_at,event_id)",
   "CREATE TABLE IF NOT EXISTS meta(name TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)",
  }
  for _,query:=range schema{if _,err=db.Exec(query);err!=nil{db.Close();return nil,fmt.Errorf("SQLite: %w",err)}}
- for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"}}{
+ for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"}}{
   rows,err:=db.Query("PRAGMA table_info("+table.table+")");if err!=nil{db.Close();return nil,err}
   exists:=false;for rows.Next(){var index,notnull,pk int;var name,kind string;var d sql.NullString;if err=rows.Scan(&index,&name,&kind,&notnull,&d,&pk);err!=nil{break};if name==table.column{exists=true}}
   rows.Close();if err!=nil{db.Close();return nil,err}
@@ -62,6 +63,10 @@ func (s *Store) recordAndQueue(m VKMessage,mentioned bool)(bool,error){
  if err!=nil{return false,err}
  inserted,_:=result.RowsAffected()
  if mentioned&&inserted==1{
+  // Do not persist unbounded VK payloads: the durable queue contains the
+  // same clipped text as the history. This also bounds downstream AI prompts.
+  m.Text=string(txt)
+  m.ReplyMessage=nil
   payload,err:=json.Marshal(m);if err!=nil{return false,err}
   if _,err=tx.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",
    m.EventID(),string(payload),time.Now().Unix());err!=nil{return false,err}
@@ -127,7 +132,8 @@ func(s *Store) enqueue(m VKMessage)error{
 }
 func(s *Store) nextPending()(VKMessage,int,error){
  var msg VKMessage;var id,data string;var attempts int
- err:=s.DB.QueryRow("SELECT event_id,payload,attempts FROM pending ORDER BY created_at,event_id LIMIT 1").Scan(&id,&data,&attempts)
+ err:=s.DB.QueryRow("SELECT event_id,payload,attempts FROM pending WHERE retry_after<=? ORDER BY created_at,event_id LIMIT 1",
+  time.Now().Unix()).Scan(&id,&data,&attempts)
  if err!=nil{return msg,0,err}
  if err=json.Unmarshal([]byte(data),&msg);err!=nil||!msg.Valid()||msg.EventID()!=id{
   // Malformed persisted jobs must not block all subsequent VK messages.
@@ -139,8 +145,39 @@ func(s *Store) nextPending()(VKMessage,int,error){
  }
  return msg,attempts,nil
 }
-func(s *Store) finish(m VKMessage){_,_=s.DB.Exec("DELETE FROM pending WHERE event_id=?",m.EventID())}
-func(s *Store) retry(m VKMessage){_,_=s.DB.Exec("UPDATE pending SET attempts=attempts+1 WHERE event_id=?",m.EventID())}
+func(s *Store) finish(m VKMessage)error{
+ _,err:=s.DB.Exec("DELETE FROM pending WHERE event_id=?",m.EventID())
+ return err
+}
+func(s *Store) retry(m VKMessage)error{
+ // Gradual backoff stops transient network failures from blocking every chat.
+ // Pending messages remain retriable until the configured retention limit.
+ _,err:=s.DB.Exec("UPDATE pending SET attempts=attempts+1, retry_after=? WHERE event_id=?",
+  time.Now().Add(retryBackoff(s.attempts(m)+1)).Unix(),m.EventID())
+ return err
+}
+func(s *Store) attempts(m VKMessage)int{
+ var n int;_ =s.DB.QueryRow("SELECT attempts FROM pending WHERE event_id=?",m.EventID()).Scan(&n)
+ return n
+}
+func retryBackoff(attempt int)time.Duration{
+ if attempt<1{attempt=1};if attempt>8{attempt=8}
+ return time.Duration(1<<uint(attempt))*time.Second
+}
+func(s *Store) prepared(m VKMessage)(string,bool,error){
+ var value sql.NullString
+ err:=s.DB.QueryRow("SELECT response_text FROM pending WHERE event_id=?",m.EventID()).Scan(&value)
+ if err!=nil{return "",false,err}
+ return value.String,value.Valid,nil
+}
+func(s *Store) prepare(m VKMessage,response string)error{
+ result,err:=s.DB.Exec("UPDATE pending SET response_text=? WHERE event_id=?",
+  response,m.EventID())
+ if err!=nil{return err}
+ n,err:=result.RowsAffected();if err!=nil{return err}
+ if n!=1{return sql.ErrNoRows}
+ return nil
+}
 func(s *Store) cursor(group int64)string{
  var value string;var updated int64
  err:=s.DB.QueryRow("SELECT value,updated_at FROM meta WHERE name=?",fmt.Sprintf("vk_cursor:%d",group)).Scan(&value,&updated)
