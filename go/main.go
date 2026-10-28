@@ -170,7 +170,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.2.0")
+ case "version","--version":fmt.Println("AI-bot Go v1.3.0")
  case "setup":
   w.setupVK(&cfg);w.setupModels(&cfg,catalog);w.behavior(&cfg)
   if err=saveConfig(cfg);err!=nil{return err};fmt.Fprintln(os.Stdout,"Настройки сохранены. Проверка: sudo aibot doctor")

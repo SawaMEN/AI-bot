@@ -10,7 +10,7 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.2.0"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.3.0"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "Загрузка готового бинарного AI-bot Go для $ARCH..."
@@ -22,7 +22,7 @@ curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.2.0" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.3.0" || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 
