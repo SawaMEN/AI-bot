@@ -36,7 +36,8 @@ func validPanelDomain(input string)bool {
  return true
 }
 func panelPath()string{return filepath.Join(filepath.Dir(configPath()),"panel.json")}
-func panelCaddyfilePath()string{return filepath.Join(filepath.Dir(configPath()),"Panel.Caddyfile")}
+// Caddy must never need read access to /etc/ai-bot (contains API keys).
+func panelCaddyfilePath()string{return "/etc/ai-bot-panel/Caddyfile"}
 
 func newPanelCredential()(password,hash string,err error){
  key:=make([]byte,32)
@@ -120,7 +121,7 @@ WantedBy=multi-user.target
   "Environment=XDG_DATA_HOME=/var/lib/ai-bot-panel-tls/data\n"+
   "Environment=XDG_CONFIG_HOME=/var/lib/ai-bot-panel-tls/config\n"+
   "StateDirectory=ai-bot-panel-tls\nStateDirectoryMode=0700\n"+
-  "ExecStart="+caddyBin+" run --config /etc/ai-bot/Panel.Caddyfile --adapter caddyfile\n"+
+  "ExecStart="+caddyBin+" run --config /etc/ai-bot-panel/Caddyfile --adapter caddyfile\n"+
   "Restart=on-failure\nRestartSec=5\n"+
   "AmbientCapabilities=CAP_NET_BIND_SERVICE\n"+
   "CapabilityBoundingSet=CAP_NET_BIND_SERVICE\n"+
@@ -176,6 +177,10 @@ func panelSetupDomain(domain string)(string,error){
  output,err:=exec.Command(caddyBin,"validate","--config",configFile.Name(),"--adapter","caddyfile").CombinedOutput()
  if err!=nil{return "",fmt.Errorf("Caddy не принял конфигурацию: %w (%s)",err,strings.TrimSpace(string(output)))}
  password,hash,err:=newPanelCredential();if err!=nil{return "",err}
+ // Public reverse-proxy config lives separately from the secret API-key dir.
+ // The caddy service cannot traverse /etc/ai-bot (root:aibot 2750).
+ if err=os.MkdirAll("/etc/ai-bot-panel",0755);err!=nil{return "",err}
+ if err=os.Chmod("/etc/ai-bot-panel",0755);err!=nil{return "",err}
  if err=savePanelConfig(PanelConfig{Domain:domain,PasswordHash:hash});err!=nil{return "",err}
  if err=writeProtected(panelCaddyfilePath(),[]byte(caddyText),0644);err!=nil{return "",err}
  for path,body:=range units{if err=writeProtected(path,[]byte(body),0644);err!=nil{return "",err}}
