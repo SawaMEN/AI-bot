@@ -1,0 +1,21 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI-bot Go</title>
+<style>body{font:15px system-ui;background:#141e29;color:#f0f4f8;max-width:920px;margin:auto;padding:22px}section{background:#213043;border-radius:12px;padding:15px;margin:16px 0}input,select,button{padding:8px;border-radius:5px;margin:5px}label{display:inline-block;margin:4px}button{cursor:pointer}a{color:#8fcaff}small{opacity:.8}</style></head><body>
+<h1>AI-bot — Go</h1><p>Локальная панель только через SSH. API-ключи не отображаются.</p>
+{{if .Notice}}<section><strong>{{.Notice}}</strong></section>{{end}}
+<section><h2>Состояние</h2><p>Бесплатных моделей: {{len .Allowed}}</p><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="restart"><button>Применить и перезапустить бота</button></form></section>
+<section><h2>Основная модель</h2><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="default"><select name="model">{{range .Allowed}}<option value="{{.}}">{{index $.Labels .}}</option>{{end}}</select><button>Сохранить</button></form></section>
+<section><h2>Бесплатные провайдеры</h2><small>Для бесплатной работы отключите платный биллинг у провайдера.</small>{{range .Providers}}
+<form method="post"><h3>{{.Name}}</h3><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="provider"><input type="hidden" name="provider" value="{{.ID}}">
+<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">Как получить бесплатный ключ</a>
+<label><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>Включить</label>
+<label><input type="checkbox" name="auto" {{if .Auto}}checked{{end}}>Автоподбор бесплатных моделей</label>
+<label>API-ключ: <input type="password" name="api_key" placeholder="Пусто = оставить прежний" maxlength="500" autocomplete="new-password"></label>
+<label><input type="checkbox" name="remove_key">Удалить ключ</label>
+{{if eq .ID "cloudflare"}}<label>Account ID <input name="account_id" maxlength="100"></label>{{end}}
+<button>Сохранить</button></form><hr>{{end}}</section>
+<section><h2>Лимиты и контекст</h2><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="settings">
+{{range .Fields}}<label>{{.Label}} <input type="number" name="{{.Key}}" value="{{.Value}}" min="1"></label>{{end}}
+<label><input type="checkbox" name="search_enabled" {{if .Search}}checked{{end}}>Поиск в интернете</label>
+<label><input type="checkbox" name="free_fallback" {{if .Fallback}}checked{{end}}>Резервная бесплатная модель</label>
+<button>Сохранить ограничения</button></form></section>
+<p><small>Порт доступен только по SSH-туннелю. Завершите панель через Ctrl+C.</small></p></body></html>

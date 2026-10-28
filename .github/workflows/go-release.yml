@@ -1,0 +1,35 @@
+name: Go binaries release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - run: go mod tidy
+      - run: go test ./go/...
+      - name: Build production binaries
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/ai-bot-linux-amd64 ./go
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/ai-bot-linux-arm64 ./go
+          (cd dist && sha256sum ai-bot-linux-amd64 ai-bot-linux-arm64 > sha256sums.txt)
+      - name: Publish downloadable binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: go-v1.0.0
+          name: AI-bot Go v1.0.0
+          body: 'Native Go AI-bot. Linux amd64 and arm64, SQLite migration compatible with Python. Settings are kept. Free-provider availability depends on their API.'
+          files: |
+            dist/ai-bot-linux-amd64
+            dist/ai-bot-linux-arm64
+            dist/sha256sums.txt
+          overwrite_files: true
+          make_latest: true
