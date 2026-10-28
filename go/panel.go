@@ -160,6 +160,9 @@ func panelSetupDomain(domain string)(string,error){
  if !portFree(80)||!portFree(443){
   return "",errors.New("80 или 443 уже занят. Ничего не изменено; используйте sudo aibot menu или SSH-панель. VPN не трогаем")
  }
+ if exec.Command("systemctl","is-enabled","--quiet","caddy.service").Run()==nil{
+  return "",errors.New("системный caddy.service включён и может занять 80/443 после перезагрузки. Проверьте, нужен ли он другим сайтам; AI-bot его не отключает")
+ }
  caddyBin,err:=exec.LookPath("caddy")
  if err!=nil{return "",errors.New("Caddy не установлен. Установите его из репозитория своего дистрибутива (например, sudo apt install caddy), затем повторите команду; если порт 443 занят VPN, используйте терминал")}
  if _,err=user.Lookup("caddy");err!=nil{return "",errors.New("не найден системный пользователь caddy; установите официальный пакет Caddy")}
