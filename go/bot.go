@@ -8,6 +8,7 @@ import (
  "log"
  "net/url"
  "strings"
+ "sync"
  "time"
 )
 
@@ -29,7 +30,14 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",mainBoard())
  }
  b.cooldowns[m.PeerID]=time.Now()
- recent:=b.store.recent(m.PeerID,count,b.cfg.ContextHours)
+ recent:=b.store.recent(m.PeerID,min(count+1,100),b.cfg.ContextHours)
+ // The current VK message is already saved to history. Do not send it again
+ // inside the history AND as the explicit question to the model.
+ if len(recent)>0{
+  last:=recent[len(recent)-1]
+  if last.Sender==m.FromID&&last.Text==m.Text{recent=recent[:len(recent)-1]}
+ }
+ if len(recent)>count{recent=recent[len(recent)-count:]}
  var convo strings.Builder
  for _,turn:=range recent {
   name:=fmt.Sprintf("Участник %d",turn.Sender);if turn.Sender<0{name="Бот"}
@@ -58,7 +66,9 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  for _,candidate:=range candidates{
   total,chat,user=b.store.counts(m.PeerID,m.FromID)
   if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{lastErr=errors.New("бесплатная квота за час");break}
-  b.store.track(m.PeerID,m.FromID)
+  if err:=b.store.track(m.PeerID,m.FromID);err!=nil{
+   return b.send(ctx,m,"Ошибка учёта бесплатных запросов. Администратор должен проверить SQLite.",mainBoard())
+  }
   cctx,cancel:=context.WithTimeout(ctx,65*time.Second)
   text,lastErr=b.ai.generate(cctx,b.cfg,candidate,messages);cancel()
   if lastErr==nil&&strings.TrimSpace(text)!=""{used=candidate;break}
@@ -71,7 +81,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.send(ctx,m,text,"");err!=nil{return err}
- b.store.answer(m,text)
+ if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
 }
 func(b *Bot) processPending(ctx context.Context){
@@ -86,14 +96,11 @@ func(b *Bot) processPending(ctx context.Context){
   }else{b.store.finish(m)}
  }
 }
-func(b *Bot) event(ctx context.Context,m VKMessage) {
- if !m.Valid(){return}
- recorded,err:=b.store.record(m)
- if err!=nil{log.Printf("SQLite record: %v",err);return}
- if !recorded{return}
- if _,mentioned:=questionFor(b.cfg,m);mentioned{
-  if err:=b.store.enqueue(m);err!=nil{log.Printf("SQLite queue: %v",err)}
- }
+func (b *Bot) event(ctx context.Context,m VKMessage) error {
+ if !m.Valid(){return nil}
+ _,mentioned:=questionFor(b.cfg,m)
+ _,err:=b.store.recordAndQueue(m,mentioned)
+ return err
 }
 func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload []byte){
  if peer<=0||user<=0||eventID==""{return}
@@ -105,10 +112,15 @@ func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload [
  err:=b.vk.send(ctx,peer,text,buttonsFor(cmd,b.catalog,b.cfg),"callback:"+eventID)
  if err!=nil{log.Printf("VK button: %v",err)}
 }
+// Retry unavailable free catalogs after ten minutes; normally refresh every 12h.
+func catalogRetryDelay(problems map[string]string,available int)time.Duration{
+ if len(problems)>0||available==0{return 10*time.Minute}
+ return 12*time.Hour
+}
 func runBot(ctx context.Context,cfg Config)error{
  store,err:=openStore(dataPath());if err!=nil{return err};defer store.close()
  catalog,err:=newCatalog();if err!=nil{return err}
- catalog.refresh(ctx,cfg)
+ startupErrors:=catalog.refresh(ctx,cfg)
  if cfg.VKToken==""||cfg.GroupID<1{return errors.New("настройте токен сообщества ВК через sudo aibot setup")}
  enabledProvider:=false;for id,p:=range cfg.Providers{
   if spec,ok:=catalog.Specs[id];ok&&p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){enabledProvider=true}
@@ -116,20 +128,43 @@ func runBot(ctx context.Context,cfg Config)error{
  if !enabledProvider{return errors.New("не подключён ни один бесплатный ИИ")}
  b:=newBot(cfg,store,catalog)
  store.cleanup(cfg.RetentionDays)
- go b.processPending(ctx)
+ workerCtx,stopWorkers:=context.WithCancel(ctx)
+ var workers sync.WaitGroup
+ workers.Add(2)
+ defer func(){stopWorkers();workers.Wait()}()
+ go func(){defer workers.Done();b.processPending(workerCtx)}()
  go func(){
-  ticker:=time.NewTicker(12*time.Hour);defer ticker.Stop()
+  defer workers.Done()
+  timer:=time.NewTimer(catalogRetryDelay(startupErrors,len(catalog.enabled(cfg))))
+  defer timer.Stop()
   for {select{
-  case <-ctx.Done():return
-  case <-ticker.C:
-   ctx2,cancel:=context.WithTimeout(ctx,40*time.Second)
+  case <-workerCtx.Done():return
+  case <-timer.C:
+   b.store.cleanup(cfg.RetentionDays)
+   ctx2,cancel:=context.WithTimeout(workerCtx,40*time.Second)
    errorsBy:=catalog.refresh(ctx2,cfg);cancel()
    if len(errorsBy)>0{log.Printf("Каталог: %v",errorsBy)}
+   timer.Reset(catalogRetryDelay(errorsBy,len(catalog.enabled(cfg))))
   }}
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
  // use fast settings queries, while queued generation runs independently.
- err=vkPoll(ctx,b.vk,store,func(m VKMessage){b.event(ctx,m)},func(peer,user int64,event string,payload json.RawMessage){go b.button(ctx,peer,user,event,payload)})
+ // Cap concurrent VK button handlers to protect the 1 GB VDS from floods.
+ callbackSlots:=make(chan struct{},8)
+ err=vkPoll(ctx,b.vk,store,func(m VKMessage)error{return b.event(ctx,m)},
+  func(peer,user int64,event string,payload json.RawMessage){
+   select{
+   case callbackSlots<-struct{}{}:
+    go func(){
+     defer func(){<-callbackSlots}()
+     callCtx,cancel:=context.WithTimeout(ctx,30*time.Second)
+     defer cancel()
+     b.button(callCtx,peer,user,event,payload)
+    }()
+   default:
+    log.Print("VK button queue full; participant can retry the button")
+   }
+  })
  if errors.Is(err,context.Canceled){return nil};return err
 }
 func vkDiagnostics(ctx context.Context,cfg Config)string{

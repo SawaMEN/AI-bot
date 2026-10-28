@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: go-release-main
+  cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -26,8 +29,8 @@ jobs:
       - name: Publish downloadable binaries
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: go-v1.1.0
-          name: AI-bot Go v1.0.0
+          tag_name: go-v1.2.0
+          name: AI-bot Go v1.2.0
           body: 'Native Go AI-bot. Linux amd64 and arm64, SQLite migration compatible with Python. Settings are kept. Free-provider availability depends on their API.'
           files: |
             dist/ai-bot-linux-amd64

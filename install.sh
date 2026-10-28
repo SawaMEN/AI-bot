@@ -10,7 +10,7 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.1.0"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.2.0"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "Загрузка готового бинарного AI-bot Go для $ARCH..."
@@ -21,8 +21,10 @@ curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE
 (cd "$STAGING" && grep " ai-bot-linux-$ARCH$" sha256sums.txt | sha256sum -c -) ||
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
-# Check ELF/executable before touching the existing service.
-"$STAGING/ai-bot-linux-$ARCH" --help >/dev/null 2>&1 || true
+# Validate the downloaded binary before stopping the currently running service.
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.2.0" || {
+  echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
+}
 
 if ! id aibot >/dev/null 2>&1; then
   useradd --system --user-group --home-dir /var/lib/ai-bot --shell /usr/sbin/nologin aibot
@@ -90,7 +92,8 @@ fi
 if /usr/local/bin/aibot is-configured; then
   chown root:aibot /etc/ai-bot/config.json
   chmod 0640 /etc/ai-bot/config.json
-  if ! systemctl restart ai-bot.service; then
+  # systemctl restart can return success even when the process exits immediately.
+  if ! systemctl restart ai-bot.service || ! (sleep 3; systemctl is-active --quiet ai-bot.service); then
     echo "Ошибка запуска новой службы. Попытка восстановления прежней версии..."
     [[ ! -f "$STAGING/ai-bot.service.old" ]] || cp -a "$STAGING/ai-bot.service.old" /etc/systemd/system/ai-bot.service
     [[ ! -f "$STAGING/aibot.old" ]] || cp -a "$STAGING/aibot.old" /usr/local/bin/aibot

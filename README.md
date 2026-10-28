@@ -10,7 +10,7 @@ Ubuntu/Debian с systemd и архитектурой Linux amd64/arm64:
 curl -fsSL https://raw.githubusercontent.com/SawaMEN/AI-bot/main/install.sh | sudo bash
 ```
 
-Установщик загружает **готовый Go-бинарник релиза go-v1.1.0 из GitHub Release** и проверяет SHA-256. Компилятор Go, Python и Docker на VDS не нужны. Если бинарника в релизе ещё нет, скрипт не заменяет старую версию. Существующие `/etc/ai-bot/config.json` и `/var/lib/ai-bot/history.db` сохраняются; при ошибке запуска предусмотрена попытка отката.
+Установщик загружает **готовый Go-бинарник релиза go-v1.2.0 из GitHub Release** и проверяет SHA-256. Компилятор Go, Python и Docker на VDS не нужны. Если бинарника в релизе ещё нет, скрипт не заменяет старую версию. Существующие `/etc/ai-bot/config.json` и `/var/lib/ai-bot/history.db` сохраняются; при ошибке запуска предусмотрена попытка отката.
 
 ```bash
 sudo aibot menu       # русское интерактивное меню

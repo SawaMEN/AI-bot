@@ -139,17 +139,37 @@ func (c *Catalog) discover(ctx context.Context,p ProviderSpec,key string)([]Mode
  sort.Slice(models,func(i,j int)bool{return models[i].Label<models[j].Label})
  return models,nil
 }
+// Refresh dynamic catalogs in parallel. A slow/offline provider must not
+// delay all other providers or VK startup by multiple 20-second timeouts.
 func (c *Catalog) refresh(ctx context.Context,cfg Config)map[string]string {
  errorsBy:=map[string]string{}
- targets:=map[string]bool{};for _,p:=range cfg.AutoModelsProviders{targets[p]=true}
- for _,key:=range cfg.EnabledModels{p,_,err:=splitModel(key);if err==nil{targets[p]=true}}
- for _,name:=range c.Order{
-  p:=c.Specs[name];if !targets[name]||p.FreePolicy=="curated"{continue}
-  settings:=cfg.Providers[name];key:=settings.APIKey;if key==""{key=p.AnonymousKey}
-  models:=[]Model{};var err error
-  if settings.Enabled&&key!=""{models,err=c.discover(ctx,p,key)}
-  c.mu.Lock();delete(c.verified,name);if err==nil&&settings.Enabled&&key!=""{c.verified[name]=models};c.mu.Unlock()
-  if err!=nil{errorsBy[name]=err.Error()}
+ targets:=map[string]bool{}
+ for _,p:=range cfg.AutoModelsProviders{targets[p]=true}
+ for _,key:=range cfg.EnabledModels{
+  p,_,err:=splitModel(key);if err==nil{targets[p]=true}
  }
+ var wg sync.WaitGroup
+ var errorMu sync.Mutex
+ for _,name:=range c.Order {
+  p:=c.Specs[name]
+  if !targets[name]||p.FreePolicy=="curated"{continue}
+  wg.Add(1)
+  go func(name string,p ProviderSpec){
+   defer wg.Done()
+   settings:=cfg.Providers[name]
+   key:=settings.APIKey;if key==""{key=p.AnonymousKey}
+   var models []Model
+   var err error
+   if settings.Enabled&&key!=""{models,err=c.discover(ctx,p,key)}
+   c.mu.Lock()
+   delete(c.verified,name)
+   if err==nil&&settings.Enabled&&key!=""{c.verified[name]=models}
+   c.mu.Unlock()
+   if err!=nil{
+    errorMu.Lock();errorsBy[name]=err.Error();errorMu.Unlock()
+   }
+  }(name,p)
+ }
+ wg.Wait()
  return errorsBy
 }

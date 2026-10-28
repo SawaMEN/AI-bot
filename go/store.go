@@ -49,15 +49,31 @@ func openStore(path string)(*Store,error){
  return &Store{db},nil
 }
 func (s *Store) close(){s.DB.Close()}
-func (s *Store) record(m VKMessage)(bool,error){
- if !m.Valid(){return false,nil};txt:=[]rune(m.Text);if len(txt)>3000{txt=txt[:3000]}
- result,err:=s.DB.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at) VALUES(?,?,?,?,?)",m.PeerID,m.FromID,m.EventID(),string(txt),time.Now().Unix())
- if err!=nil{return false,err};n,_:=result.RowsAffected();return n==1,nil
+func (s *Store) record(m VKMessage)(bool,error){return s.recordAndQueue(m,false)}
+// recordAndQueue persists the message and a pending AI job atomically.
+// Never advance VK's cursor for an event before both records are committed.
+func (s *Store) recordAndQueue(m VKMessage,mentioned bool)(bool,error){
+ if !m.Valid(){return false,nil}
+ txt:=[]rune(m.Text);if len(txt)>3000{txt=txt[:3000]}
+ tx,err:=s.DB.Begin();if err!=nil{return false,err}
+ defer tx.Rollback()
+ result,err:=tx.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at) VALUES(?,?,?,?,?)",
+  m.PeerID,m.FromID,m.EventID(),string(txt),time.Now().Unix())
+ if err!=nil{return false,err}
+ inserted,_:=result.RowsAffected()
+ if mentioned&&inserted==1{
+  payload,err:=json.Marshal(m);if err!=nil{return false,err}
+  if _,err=tx.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",
+   m.EventID(),string(payload),time.Now().Unix());err!=nil{return false,err}
+ }
+ if err=tx.Commit();err!=nil{return false,err}
+ return inserted==1,nil
 }
-func (s *Store) answer(m VKMessage,text string){
- if len(text)>3000{text=string([]rune(text)[:min(3000,len([]rune(text)))])}
- _,_ =s.DB.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at) VALUES(?,?,?,?,?)",
- m.PeerID,-1*m.FromID,"bot:"+m.EventID(),text,time.Now().Unix())
+func (s *Store) answer(m VKMessage,text string,groupID int64)error{
+ chars:=[]rune(text);if len(chars)>3000{text=string(chars[:3000])}
+ _,err:=s.DB.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at) VALUES(?,?,?,?,?)",
+ m.PeerID,-groupID,"bot:"+m.EventID(),text,time.Now().Unix())
+ return err
 }
 func (s *Store) recent(peer int64,n,hours int)[]Turn{
  rows,err:=s.DB.Query("SELECT sender_id,text FROM messages WHERE peer_id=? AND created_at>=? ORDER BY id DESC LIMIT ?",peer,time.Now().Add(-time.Duration(hours)*time.Hour).Unix(),min(100,max(1,n)))
@@ -66,15 +82,21 @@ func (s *Store) recent(peer int64,n,hours int)[]Turn{
  for i,j:=0,len(turns)-1;i<j;i,j=i+1,j-1{turns[i],turns[j]=turns[j],turns[i]}
  return turns
 }
+// Counts in one indexed scan; on SQLite errors fail closed, never overspend quota.
 func (s *Store) counts(peer,sender int64)(int,int,int){
  cutoff:=time.Now().Add(-time.Hour).Unix()
  var total,chat,user int
- _=s.DB.QueryRow("SELECT COUNT(*) FROM calls WHERE created_at>=?",cutoff).Scan(&total)
- _=s.DB.QueryRow("SELECT COUNT(*) FROM calls WHERE created_at>=? AND peer_id=?",cutoff,peer).Scan(&chat)
- _=s.DB.QueryRow("SELECT COUNT(*) FROM calls WHERE created_at>=? AND sender_id=?",cutoff,sender).Scan(&user)
+ err:=s.DB.QueryRow(`SELECT COUNT(*),
+  COALESCE(SUM(CASE WHEN peer_id=? THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN sender_id=? THEN 1 ELSE 0 END),0)
+  FROM calls WHERE created_at>=?`,peer,sender,cutoff).Scan(&total,&chat,&user)
+ if err!=nil{return int(^uint(0)>>1),int(^uint(0)>>1),int(^uint(0)>>1)}
  return total,chat,user
 }
-func(s *Store) track(peer,sender int64){_,_=s.DB.Exec("INSERT INTO calls(created_at,peer_id,sender_id) VALUES(?,?,?)",time.Now().Unix(),peer,sender)}
+func(s *Store) track(peer,sender int64)error{
+ _,err:=s.DB.Exec("INSERT INTO calls(created_at,peer_id,sender_id) VALUES(?,?,?)",time.Now().Unix(),peer,sender)
+ return err
+}
 func(s *Store) getPref(scope string,id int64)Pref{
  var a,b,c,d sql.NullString;var n sql.NullInt64
  err:=s.DB.QueryRow("SELECT model,search,style,context_messages,fallback FROM preferences WHERE scope=? AND scope_id=?",scope,id).Scan(&a,&b,&c,&n,&d)
@@ -93,8 +115,6 @@ func(s *Store) effective(cfg Config,peer,sender int64,c *Catalog)(string,string,
  allowed:=c.enabled(cfg);user:=s.getPref("user",sender);chat:=Pref{};if peer>=2000000000{chat=s.getPref("chat",peer)}
  model:=c.defaultModel(cfg)
  for _,candidate:=range []string{chat.Model,user.Model}{for _,k:=range allowed{if k==candidate{model=k}}}
- // user setting wins over chat if both enabled
- if user.Model!=""{for _,k:=range allowed{if k==user.Model{model=k}}}
  search:=choose(user.Search,chat.Search,"auto")
  style:=choose(user.Style,chat.Style,"normal")
  count:=cfg.ContextMessages;if chat.Context>0{count=min(count,chat.Context)};if user.Context>0{count=min(cfg.ContextMessages,user.Context)}
@@ -106,9 +126,18 @@ func(s *Store) enqueue(m VKMessage)error{
  _,err:=s.DB.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",m.EventID(),string(blob),time.Now().Unix());return err
 }
 func(s *Store) nextPending()(VKMessage,int,error){
- var msg VKMessage;var data string;var attempts int
- err:=s.DB.QueryRow("SELECT payload,attempts FROM pending ORDER BY created_at,event_id LIMIT 1").Scan(&data,&attempts)
- if err!=nil{return msg,0,err};err=json.Unmarshal([]byte(data),&msg);return msg,attempts,err
+ var msg VKMessage;var id,data string;var attempts int
+ err:=s.DB.QueryRow("SELECT event_id,payload,attempts FROM pending ORDER BY created_at,event_id LIMIT 1").Scan(&id,&data,&attempts)
+ if err!=nil{return msg,0,err}
+ if err=json.Unmarshal([]byte(data),&msg);err!=nil||!msg.Valid()||msg.EventID()!=id{
+  // Malformed persisted jobs must not block all subsequent VK messages.
+  // Do not log their untrusted content (potentially private chat history).
+  if _,removeErr:=s.DB.Exec("DELETE FROM pending WHERE event_id=?",id);removeErr!=nil{
+   return msg,0,removeErr
+  }
+  return msg,0,sql.ErrNoRows
+ }
+ return msg,attempts,nil
 }
 func(s *Store) finish(m VKMessage){_,_=s.DB.Exec("DELETE FROM pending WHERE event_id=?",m.EventID())}
 func(s *Store) retry(m VKMessage){_,_=s.DB.Exec("UPDATE pending SET attempts=attempts+1 WHERE event_id=?",m.EventID())}
@@ -124,4 +153,11 @@ func(s *Store) cleanup(days int){
  _,_=s.DB.Exec("DELETE FROM pending WHERE created_at<?",time.Now().Add(-time.Duration(days)*24*time.Hour).Unix())
  _,_=s.DB.Exec("DELETE FROM calls WHERE created_at<?",time.Now().Add(-24*time.Hour).Unix())
 }
-func(s *Store) clearMessages(){_,_=s.DB.Exec("DELETE FROM messages")}
+// Clearing the history also removes queued copies of private user messages.
+func(s *Store) clearMessages()error{
+ tx,err:=s.DB.Begin();if err!=nil{return err}
+ defer tx.Rollback()
+ if _,err=tx.Exec("DELETE FROM pending");err!=nil{return err}
+ if _,err=tx.Exec("DELETE FROM messages");err!=nil{return err}
+ return tx.Commit()
+}
