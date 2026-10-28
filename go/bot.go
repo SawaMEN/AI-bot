@@ -3,6 +3,7 @@ package main
 import (
  "context"
  "errors"
+ "encoding/json"
  "fmt"
  "log"
  "net/url"
@@ -129,7 +130,7 @@ func runBot(ctx context.Context,cfg Config)error{
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
  // use fast settings queries, while queued generation runs independently.
- err=vkPoll(ctx,b.vk,store,func(m VKMessage){b.event(ctx,m)},func(peer,user int64,event string,payload []byte){go b.button(ctx,peer,user,event,payload)})
+ err=vkPoll(ctx,b.vk,store,func(m VKMessage){b.event(ctx,m)},func(peer,user int64,event string,payload json.RawMessage){go b.button(ctx,peer,user,event,payload)})
  if errors.Is(err,context.Canceled){return nil};return err
 }
 func vkDiagnostics(ctx context.Context,cfg Config)string{
