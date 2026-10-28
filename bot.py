@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """AI-bot для ВК. Один процесс, SQLite, Bots Long Poll."""
+import contextvars
+import hashlib
 import json
 import logging
 import queue
@@ -22,6 +24,7 @@ LOG = logging.getLogger("aibot")
 VK_API = "https://api.vk.com/method/"
 VK_VERSION = "5.199"
 STOP = False
+_SEND_ID = contextvars.ContextVar("vk_response_random_id", default=None)
 
 SYSTEM = (
     "Ты полезный ИИ-участник беседы ВКонтакте. Отвечай по-русски ясно и кратко, "
@@ -54,7 +57,7 @@ def send(cfg, peer, text, menu=False, keyboard=None):
         keyboard = for_command("меню", cfg)
     params = {"keyboard": keyboard} if keyboard is not None else {}
     vk_call(cfg, "messages.send", peer_id=peer,
-            random_id=__import__("secrets").randbelow(2147483647) + 1,
+            random_id=_SEND_ID.get() or (__import__("secrets").randbelow(2147483647) + 1),
             message=text, **params)
 
 
@@ -246,21 +249,45 @@ def record_incoming(db, item):
 
 
 def answer_worker(cfg, jobs, stop_event, db_path=None):
-    """Один поток отвечает по порядку, не блокируя VK Long Poll."""
+    """Обработка в отдельном потоке; недоставленные задания переживают перезапуск."""
     db = History(db_path) if db_path is not None else History()
     cooldowns = {}
     try:
         while not stop_event.is_set() or not jobs.empty():
+            sourced_from_queue = False
             try:
                 item = jobs.get(timeout=0.5)
+                sourced_from_queue = True
             except queue.Empty:
+                waiting = db.pending()
+                if not waiting:
+                    continue
+                item, _ = waiting
+            if not db.is_pending(item):
+                if sourced_from_queue:
+                    jobs.task_done()
                 continue
+            # Повторная обработка не создаст второй ответ в VK:
+            # random_id стабилен для конкретного входящего обращения.
+            data = (str(cfg["group_id"]) + ":" + db.pending_id(item)).encode()
+            random_id = int.from_bytes(hashlib.sha256(data).digest()[:4], "big") & 0x7fffffff
+            token = _SEND_ID.set(random_id or 1)
             try:
                 handle_message(cfg, db, item, cooldowns, pre_recorded=True)
+                db.finish_pending(item)
             except Exception:
-                LOG.exception("Ошибка фоновой обработки обращения")
+                db.retry_pending(item)
+                LOG.exception("Ошибка обработки обращения; сообщение останется в очереди")
+                waiting = db.pending()
+                if waiting and db.pending_id(waiting[0]) == db.pending_id(item) and waiting[1] >= 3:
+                    db.finish_pending(item)
+                    LOG.error("Обращение отброшено после 3 ошибок")
+                else:
+                    time.sleep(2)
             finally:
-                jobs.task_done()
+                _SEND_ID.reset(token)
+                if sourced_from_queue:
+                    jobs.task_done()
     finally:
         db.db.close()
 
@@ -346,13 +373,11 @@ def run():
                             question = trigger_question(
                                 item.get("text", ""), cfg["group_id"], cfg["trigger"],
                                 isinstance(reply, dict) and reply.get("from_id") == -int(cfg["group_id"]))
-                            if question is not None:
+                            if question is not None and db.enqueue(item):
                                 try:
                                     jobs.put_nowait(item)
                                 except queue.Full:
-                                    LOG.warning("Очередь ИИ переполнена; история сохранена")
-                                    send(cfg, int(item["peer_id"]),
-                                         "Бот перегружен. Повторите обращение позже.")
+                                    LOG.warning("Очередь ИИ заполнена; запрос сохранён и будет обработан позже")
                 except Exception:
                     LOG.exception("Ошибка обработки события ВК")
                 handled += 1
@@ -365,6 +390,9 @@ def run():
             server_data = None
             retries = min(retries + 1, 6)
             time.sleep(min(2 ** retries, 60))
+    worker_stop.set()
+    worker.join(timeout=5)
+    db.db.close()
 
 
 if __name__ == "__main__":
