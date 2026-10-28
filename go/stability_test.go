@@ -91,3 +91,17 @@ func TestVKPollDoesNotAdvanceCursorOnHandlerError(t *testing.T){
  if err==nil||called!=1{t.Fatalf("handler error not propagated: %v, calls %d",err,called)}
  if store.cursor(123)!=""{t.Fatal("cursor advanced after lost VK event")}
 }
+
+func TestCorruptPendingDoesNotBlockFollowingMessages(t *testing.T) {
+ store,err:=openStore(filepath.Join(t.TempDir(),"history.db"))
+ if err!=nil{t.Fatal(err)}
+ defer store.close()
+ _,err=store.DB.Exec("INSERT INTO pending(event_id,payload,created_at) VALUES (?,?,?)",
+ "vk:1:1","{invalid-json",1)
+ if err!=nil{t.Fatal(err)}
+ m:=VKMessage{PeerID:2000000001,FromID:11,ConversationMessageID:5,Text:"бот привет"}
+ if _,err=store.recordAndQueue(m,true);err!=nil{t.Fatal(err)}
+ if _,_,err=store.nextPending();err==nil{t.Fatal("corrupt event should be skipped")}
+ got,_,err:=store.nextPending()
+ if err!=nil||got.EventID()!=m.EventID(){t.Fatalf("valid queued job blocked: %+v %v",got,err)}
+}
