@@ -155,4 +155,11 @@ func(s *Store) cleanup(days int){
  _,_=s.DB.Exec("DELETE FROM pending WHERE created_at<?",time.Now().Add(-time.Duration(days)*24*time.Hour).Unix())
  _,_=s.DB.Exec("DELETE FROM calls WHERE created_at<?",time.Now().Add(-24*time.Hour).Unix())
 }
-func(s *Store) clearMessages(){_,_=s.DB.Exec("DELETE FROM messages")}
+// Clearing the history also removes queued copies of private user messages.
+func(s *Store) clearMessages()error{
+ tx,err:=s.DB.Begin();if err!=nil{return err}
+ defer tx.Rollback()
+ if _,err=tx.Exec("DELETE FROM pending");err!=nil{return err}
+ if _,err=tx.Exec("DELETE FROM messages");err!=nil{return err}
+ return tx.Commit()
+}
