@@ -258,6 +258,7 @@ def menu():
         print("8. Обновить программу")
         print("9. Проверка VK, базы и бесплатных моделей")
         print("10. Включить события VK для кнопок (с подтверждением)")
+        print("11. Локальная веб-панель администратора через SSH")
         print("0. Выход")
         choice = input("Пункт меню: ").strip()
         if choice == "0":
@@ -293,6 +294,10 @@ def menu():
                 success, message = enable_vk_events(cfg)
                 print(("Успешно: " if success else "Не получилось: ") + message)
 
+        elif choice == "11":
+            from ai_bot.web import run_web
+            run_web()
+
 
 def main():
     action = sys.argv[1] if len(sys.argv) > 1 else "menu"
@@ -302,7 +307,7 @@ def main():
             item.get("enabled") and (item.get("api_key") or SPECS[name].get("anonymous_key"))
             for name, item in cfg.get("providers", {}).items() if name in SPECS)
         sys.exit(0 if cfg["vk_token"] and cfg["group_id"] and connected else 1)
-    if action in ("setup", "menu", "vk", "api", "behavior", "clear", "restart", "doctor"):
+    if action in ("setup", "menu", "vk", "api", "behavior", "clear", "restart", "doctor", "web"):
         require_root()
     if action == "setup":
         configure_vk(cfg)
@@ -332,6 +337,9 @@ def main():
         show_status(cfg)
     elif action == "doctor":
         return 0 if run_diagnostics(cfg) else 1
+    elif action == "web":
+        from ai_bot.web import run_web
+        run_web()
     elif action == "logs":
         subprocess.run(["journalctl", "-u", "ai-bot", "-n", "60", "--no-pager"], check=False)
     else:
