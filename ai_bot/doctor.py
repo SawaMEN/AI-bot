@@ -52,6 +52,34 @@ def inspect_vk(cfg, request=None):
         return False, ["VK API недоступен: " + type(exc).__name__]
 
 
+
+def enable_vk_events(cfg, request=None):
+    """Пробует включить только ключевые события после явного подтверждения.
+
+    VK может требовать пользовательский токен администратора. Не скрываем отказ.
+    У существующего сообщества могут быть и другие события — предупредите
+    администратора о возможном изменении их настроек.
+    """
+    if not cfg.get("vk_token") or not int(cfg.get("group_id") or 0):
+        return False, "Сначала задайте токен и ID сообщества."
+    request = request or requests.post
+    try:
+        reply = request("https://api.vk.com/method/groups.setLongPollSettings",
+                        data={"access_token": cfg["vk_token"], "v": "5.199",
+                              "group_id": int(cfg["group_id"]), "enabled": 1,
+                              "message_new": 1, "message_event": 1},
+                        timeout=(5, 15))
+        reply.raise_for_status()
+        payload = reply.json()
+        if payload.get("error"):
+            return False, str(payload["error"].get("error_msg", "ВК отказал"))[:160]
+        if payload.get("response") in (1, True):
+            return True, "События включены. Проверьте права сообщества в настройках ВК."
+        return False, "Неожиданный ответ ВК. Проверьте настройки вручную."
+    except (ValueError, requests.RequestException) as exc:
+        return False, "Не удалось настроить VK API: " + type(exc).__name__
+
+
 def inspect_local(cfg, db_path=None):
     lines = []
     db_path = Path(db_path or DATA_FILE)
