@@ -172,7 +172,9 @@ def run_web(port=8765):
     password = secrets.token_urlsafe(22)
     csrf = secrets.token_urlsafe(24)
     required = "Basic " + base64.b64encode(("admin:" + password).encode()).decode()
-    state = {"status": ""}
+    initial_cfg = load_config()
+    refresh_free_models(initial_cfg)
+    state = {"status": "", "catalog": initial_cfg.get("_verified_free_models", {})}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -206,7 +208,9 @@ def run_web(port=8765):
             if urlsplit(self.path).path != "/":
                 self.send_error(404)
                 return
-            html = render_page(load_config(), csrf, state["status"]).encode("utf-8")
+            cfg = load_config()
+            cfg["_verified_free_models"] = state["catalog"]
+            html = render_page(cfg, csrf, state["status"]).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
@@ -241,7 +245,11 @@ def run_web(port=8765):
                     state["status"] = "Бот перезапущен."
                 else:
                     cfg = load_config()
+                    cfg["_verified_free_models"] = state["catalog"]
                     state["status"] = apply_form(cfg, fields)
+                    if fields.get("action") == "provider":
+                        refresh_free_models(cfg, fields.get("provider"))
+                        state["catalog"] = cfg.get("_verified_free_models", {})
                     save_config(cfg)
             except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 state["status"] = "Ошибка сохранения: " + str(exc)[:160]
