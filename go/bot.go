@@ -18,6 +18,14 @@ func (b *Bot) send(ctx context.Context,m VKMessage,body string,buttons string)er
  return b.vk.send(ctx,m.PeerID,body,buttons,"answer:"+m.EventID())
 }
 func (b *Bot) execute(ctx context.Context,m VKMessage)error{
+ // Replay a fully generated answer after VK timeouts or process restarts,
+ // without a second LLM call or another free-tier quota charge.
+ cached,ready,err:=b.store.prepared(m)
+ if err!=nil{return err}
+ if ready{
+  if err=b.vk.send(ctx,m.PeerID,cached,"","answer:"+m.EventID());err!=nil{return err}
+  return b.store.answer(m,cached,b.cfg.GroupID)
+ }
  question,mentioned:=questionFor(b.cfg,m);if !mentioned{return nil}
  answer,command:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,m.PeerID,m.FromID,question)
  if command{return b.send(ctx,m,answer,buttonsFor(question,b.catalog,b.cfg))}
@@ -80,6 +88,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if len(found)>0{urls:=[]string{};for _,r:=range found{urls=append(urls,r.URL)};text+="\nИсточники:\n"+strings.Join(urls,"\n")}
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
+ if err:=b.store.prepare(m,text);err!=nil{return err}
  if err:=b.send(ctx,m,text,"");err!=nil{return err}
  if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
@@ -89,15 +98,26 @@ func(b *Bot) processPending(ctx context.Context){
   m,attempts,err:=b.store.nextPending();if err!=nil{
    if !sleepContext(ctx,350*time.Millisecond){return};continue
   }
-  if attempts>=3{log.Printf("Запрос %s отброшен после 3 ошибок",m.EventID());b.store.finish(m);continue}
+  if attempts>0&&attempts%10==0{
+   log.Printf("Повтор отправки VK %s, попыток: %d",m.EventID(),attempts)
+  }
   if err=b.execute(ctx,m);err!=nil{
-   b.store.retry(m);log.Printf("Ответ ВК не отправлен для %s: %v",m.EventID(),err)
+   if retryErr:=b.store.retry(m);retryErr!=nil{
+    log.Printf("Ошибка сохранения повторной попытки %s: %v",m.EventID(),retryErr)
+   }
+   log.Printf("Обработка VK %s временно недоступна: %v",m.EventID(),err)
    if !sleepContext(ctx,time.Second){return}
-  }else{b.store.finish(m)}
+  }else if err=b.store.finish(m);err!=nil{
+   log.Printf("Ошибка завершения сообщения VK %s: %v",m.EventID(),err)
+  }
  }
 }
 func (b *Bot) event(ctx context.Context,m VKMessage) error {
  if !m.Valid(){return nil}
+ // The VK event may be much larger than the AI context budget. Keep
+ // only a bounded, UTF-8-safe question, both in the message DB and queue.
+ chars:=[]rune(m.Text)
+ if len(chars)>3000{m.Text=string(chars[:3000])}
  _,mentioned:=questionFor(b.cfg,m)
  _,err:=b.store.recordAndQueue(m,mentioned)
  return err
