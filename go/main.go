@@ -170,6 +170,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
+ case "version","--version":fmt.Println("AI-bot Go v1.2.0")
  case "setup":
   w.setupVK(&cfg);w.setupModels(&cfg,catalog);w.behavior(&cfg)
   if err=saveConfig(cfg);err!=nil{return err};fmt.Fprintln(os.Stdout,"Настройки сохранены. Проверка: sudo aibot doctor")
@@ -184,7 +185,7 @@ func run()error{
  case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
  case "behavior":w.behavior(&cfg);return saveConfig(cfg)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();s.clearMessages()
- default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear")
+ default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear, version")
  }
  return nil
 }
