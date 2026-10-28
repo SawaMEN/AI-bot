@@ -105,3 +105,13 @@ func TestCorruptPendingDoesNotBlockFollowingMessages(t *testing.T) {
  got,_,err:=store.nextPending()
  if err!=nil||got.EventID()!=m.EventID(){t.Fatalf("valid queued job blocked: %+v %v",got,err)}
 }
+
+func TestClearHistoryAlsoClearsPendingQueue(t *testing.T){
+ store,err:=openStore(filepath.Join(t.TempDir(),"history.db"));if err!=nil{t.Fatal(err)}
+ defer store.close()
+ m:=VKMessage{PeerID:2000000001,FromID:42,ConversationMessageID:2,Text:"бот личные данные"}
+ if _,err=store.recordAndQueue(m,true);err!=nil{t.Fatal(err)}
+ if err=store.clearMessages();err!=nil{t.Fatal(err)}
+ if len(store.recent(m.PeerID,5,24))!=0{t.Fatal("message history not erased")}
+ if _,_,err=store.nextPending();err==nil{t.Fatal("pending privacy leak after history clear")}
+}
