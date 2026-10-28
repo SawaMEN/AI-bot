@@ -16,7 +16,7 @@ import (
 func testCfg() Config{
  c:=defaults()
  c.VKToken="fake";c.GroupID=123
- c.Providers=map[string]ProviderConfig{"groq":{Enabled:true,APIKey:"free"},"zai":{Enabled:true,APIKey:"free"}}
+ c.Providers=map[string]ProviderConfig{"groq":{Enabled:true,APIKey:"S3CRET_FAKE_KEY_2026"},"zai":{Enabled:true,APIKey:"S3CRET_FAKE_KEY_2026"}}
  c.EnabledModels=[]string{"groq:openai/gpt-oss-20b","zai:glm-4.7-flash"}
  c.DefaultModel=c.EnabledModels[0]
  return c
@@ -38,7 +38,7 @@ func TestPersonalPreferenceAndChatIsolation(t *testing.T){
 }
 func TestHTTPAIOnlyApprovedFreeModel(t *testing.T){
  server:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-  if r.Header.Get("Authorization")!="Bearer free"{t.Error("missing auth")}
+  if r.Header.Get("Authorization")!="Bearer S3CRET_FAKE_KEY_2026"{t.Error("missing auth")}
   if r.Method!="POST"{t.Error("not post")}
   var body map[string]any;if json.NewDecoder(r.Body).Decode(&body)!=nil{t.Error("bad json")}
   if body["model"]!="openai/gpt-oss-20b"{t.Errorf("unexpected model %v",body["model"])}
@@ -57,6 +57,6 @@ func TestWebTemplateDoesNotPrintSecret(t *testing.T){
  data:=webData{CSRF:"csrf",Allowed:[]string{cfg.DefaultModel},Labels:map[string]string{cfg.DefaultModel:"Groq"},Providers:[]webProvider{{ID:"groq",Name:"Groq",URL:"https://console.groq.com/keys",Enabled:true,Auto:false}}}
  tmpl,err:=template.New("web").Parse(adminHTML);if err!=nil{t.Fatal(err)}
  var out bytes.Buffer;if err=tmpl.Execute(&out,data);err!=nil{t.Fatal(err)}
- if strings.Contains(out.String(),"free"){t.Fatal("template contains token")}
+ if strings.Contains(out.String(),"S3CRET_FAKE_KEY_2026"){t.Fatal("template contains token")}
  if !strings.Contains(out.String(),"csrf"){t.Fatal("CSRF missing")}
 }
