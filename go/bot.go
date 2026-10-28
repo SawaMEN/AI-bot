@@ -115,13 +115,19 @@ func runBot(ctx context.Context,cfg Config)error{
  if !enabledProvider{return errors.New("не подключён ни один бесплатный ИИ")}
  b:=newBot(cfg,store,catalog)
  store.cleanup(cfg.RetentionDays)
- go b.processPending(ctx)
+ workerCtx,stopWorkers:=context.WithCancel(ctx)
+ var workers sync.WaitGroup
+ workers.Add(2)
+ defer func(){stopWorkers();workers.Wait()}()
+ go func(){defer workers.Done();b.processPending(workerCtx)}()
  go func(){
+  defer workers.Done()
   ticker:=time.NewTicker(12*time.Hour);defer ticker.Stop()
   for {select{
-  case <-ctx.Done():return
+  case <-workerCtx.Done():return
   case <-ticker.C:
-   ctx2,cancel:=context.WithTimeout(ctx,40*time.Second)
+   b.store.cleanup(cfg.RetentionDays)
+   ctx2,cancel:=context.WithTimeout(workerCtx,40*time.Second)
    errorsBy:=catalog.refresh(ctx2,cfg);cancel()
    if len(errorsBy)>0{log.Printf("Каталог: %v",errorsBy)}
   }}
