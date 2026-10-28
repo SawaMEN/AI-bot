@@ -64,8 +64,9 @@ var aiTrigger=regexp.MustCompile(`(?i)^/ai(?:$|[ ,:;.!?])`)
 func questionFor(cfg Config,m VKMessage) (string,bool) {
  if !m.Valid(){return "",false}
  text:=strings.TrimSpace(m.Text)
- if strings.HasPrefix(strings.ToLower(text),strings.ToLower(cfg.Trigger)+" ")||strings.EqualFold(text,cfg.Trigger) {
-  return strings.TrimSpace(strings.TrimLeft(text[len([]byte(cfg.Trigger)):]," ,.:;!?")),true
+ if len(text)>=len(cfg.Trigger)&&strings.EqualFold(text[:len(cfg.Trigger)],cfg.Trigger) {
+  rest:=text[len(cfg.Trigger):]
+  if rest==""||strings.ContainsRune(" ,.:;!?\t\n",rune(rest[0])) {return strings.TrimSpace(strings.TrimLeft(rest," ,.:;!?")),true}
  }
  if aiTrigger.MatchString(text){return strings.TrimSpace(strings.TrimLeft(text[3:]," ,.:;!?")),true}
  group:=strconv.FormatInt(cfg.GroupID,10)
