@@ -23,6 +23,7 @@ DEFAULTS = {
     "retention_days": 7, "search_enabled": True, "cooldown_seconds": 15,
     "max_requests_hour": 50, "providers": {}, "enabled_models": [], "default_model": "",
     "auto_models_providers": [], "free_fallback": True,
+    "max_user_requests_hour": 12, "max_chat_requests_hour": 25,
 }
 
 
@@ -125,6 +126,14 @@ class History:
         self.db.execute("""CREATE TABLE IF NOT EXISTS calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL
         )""")
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(calls)")}
+        for column in ("peer_id", "sender_id"):
+            if column not in columns:
+                self.db.execute(f"ALTER TABLE calls ADD COLUMN {column} INTEGER")
+        self.db.execute("CREATE INDEX IF NOT EXISTS idx_calls_at ON calls(created_at)")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS meta (
+            name TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL
+        )""")
         from ai_bot.preferences import init_preferences
         init_preferences(self.db)
         self.db.commit()
@@ -146,13 +155,40 @@ class History:
         ).fetchall()
         return list(reversed(rows))
 
-    def count_calls_hour(self):
-        return self.db.execute("SELECT COUNT(*) FROM calls WHERE created_at>=?",
-                               (int(time.time()) - 3600,)).fetchone()[0]
+    def count_calls_hour(self, peer_id=None, sender_id=None):
+        query = "SELECT COUNT(*) FROM calls WHERE created_at>=?"
+        params = [int(time.time()) - 3600]
+        if peer_id is not None:
+            query += " AND peer_id=?"
+            params.append(int(peer_id))
+        if sender_id is not None:
+            query += " AND sender_id=?"
+            params.append(int(sender_id))
+        return self.db.execute(query, params).fetchone()[0]
 
-    def track_call(self):
+    def track_call(self, peer_id=None, sender_id=None):
         with self.db:
-            self.db.execute("INSERT INTO calls(created_at) VALUES (?)", (int(time.time()),))
+            self.db.execute("INSERT INTO calls(created_at,peer_id,sender_id) VALUES (?,?,?)",
+                            (int(time.time()), peer_id, sender_id))
+
+    def get_cursor(self, group_id):
+        row = self.db.execute("SELECT value,updated_at FROM meta WHERE name=?",
+                              ("vk_cursor:" + str(group_id),)).fetchone()
+        if not row or int(time.time()) - int(row[1]) > 7200:
+            return None
+        return row[0]
+
+    def set_cursor(self, group_id, cursor):
+        with self.db:
+            self.db.execute("""INSERT INTO meta(name,value,updated_at) VALUES (?,?,?)
+                ON CONFLICT(name) DO UPDATE SET value=excluded.value,
+                                                updated_at=excluded.updated_at""",
+                ("vk_cursor:" + str(group_id), str(cursor), int(time.time())))
+
+    def clear_cursor(self, group_id):
+        with self.db:
+            self.db.execute("DELETE FROM meta WHERE name=?", ("vk_cursor:" + str(group_id),))
+
 
     def cleanup(self, days):
         cutoff = int(time.time()) - max(1, int(days)) * 86400
