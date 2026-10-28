@@ -67,7 +67,13 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
  if choice==1{cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id);fmt.Fprintln(w.out,"Включён безопасный автоматический выбор.")}
  if choice==2{
   ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second);defer cancel()
-  c.refresh(ctx,*cfg)
+  if p.FreePolicy!="curated"{
+   key:=settings.APIKey;if key==""{key=p.AnonymousKey}
+   discovered,err:=c.discover(ctx,p,key)
+   if err!=nil{fmt.Fprintln(w.out,"Каталог временно недоступен:",err)}else{
+    c.mu.Lock();c.verified[id]=discovered;c.mu.Unlock()
+   }
+  }
   list:=c.allowedFor(id,*cfg)
   if len(list)==0{fmt.Fprintln(w.out,"Пока нет доступных подтверждённо бесплатных моделей. Используйте автоматический режим позже.");return}
   for i,k:=range list{fmt.Fprintf(w.out,"%d. %s\n",i+1,c.label(k))}
