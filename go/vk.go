@@ -236,11 +236,16 @@ func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,on
   if err!=nil||response.StatusCode!=200{serverURL="";continue}
   var batch struct{Failed int `json:"failed"`;TS json.RawMessage `json:"ts"`;Updates []struct{Type string `json:"type"`;Object json.RawMessage `json:"object"`} `json:"updates"`}
   if json.Unmarshal(data,&batch)!=nil{serverURL="";continue}
+  // Failed 2/3 responses do not necessarily include ts.
+  if batch.Failed==2||batch.Failed==3{
+   if batch.Failed==3{s.clearCursor(v.groupID)}
+   serverURL=""
+   continue
+  }
   parsedTS,err:=vkTimestamp(batch.TS)
   if err!=nil{serverURL="";continue}
-  if batch.Failed!=0{
-   if batch.Failed==1{ts=parsedTS;s.setCursor(v.groupID,ts)}else{if batch.Failed==3{s.clearCursor(v.groupID)};serverURL=""};continue
-  }
+  if batch.Failed==1{ts=parsedTS;s.setCursor(v.groupID,ts);continue}
+  if batch.Failed!=0{serverURL="";continue}
   fails=0
   for _,evt:=range batch.Updates{
    switch evt.Type {
