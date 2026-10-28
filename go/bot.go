@@ -149,7 +149,22 @@ func runBot(ctx context.Context,cfg Config)error{
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
  // use fast settings queries, while queued generation runs independently.
- err=vkPoll(ctx,b.vk,store,func(m VKMessage)error{return b.event(ctx,m)},func(peer,user int64,event string,payload json.RawMessage){go b.button(ctx,peer,user,event,payload)})
+ // Cap concurrent VK button handlers to protect the 1 GB VDS from floods.
+ callbackSlots:=make(chan struct{},8)
+ err=vkPoll(ctx,b.vk,store,func(m VKMessage)error{return b.event(ctx,m)},
+  func(peer,user int64,event string,payload json.RawMessage){
+   select{
+   case callbackSlots<-struct{}{}:
+    go func(){
+     defer func(){<-callbackSlots}()
+     callCtx,cancel:=context.WithTimeout(ctx,30*time.Second)
+     defer cancel()
+     b.button(callCtx,peer,user,event,payload)
+    }()
+   default:
+    log.Print("VK button queue full; participant can retry the button")
+   }
+  })
  if errors.Is(err,context.Canceled){return nil};return err
 }
 func vkDiagnostics(ctx context.Context,cfg Config)string{
