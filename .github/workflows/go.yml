@@ -1,7 +1,7 @@
 name: Go native
 on:
   push:
-    branches: [main, rewrite/go-native]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 jobs:
