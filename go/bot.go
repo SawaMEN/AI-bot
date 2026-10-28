@@ -105,10 +105,15 @@ func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload [
  err:=b.vk.send(ctx,peer,text,buttonsFor(cmd,b.catalog,b.cfg),"callback:"+eventID)
  if err!=nil{log.Printf("VK button: %v",err)}
 }
+// Retry unavailable free catalogs after ten minutes; normally refresh every 12h.
+func catalogRetryDelay(problems map[string]string,available int)time.Duration{
+ if len(problems)>0||available==0{return 10*time.Minute}
+ return 12*time.Hour
+}
 func runBot(ctx context.Context,cfg Config)error{
  store,err:=openStore(dataPath());if err!=nil{return err};defer store.close()
  catalog,err:=newCatalog();if err!=nil{return err}
- catalog.refresh(ctx,cfg)
+ startupErrors:=catalog.refresh(ctx,cfg)
  if cfg.VKToken==""||cfg.GroupID<1{return errors.New("настройте токен сообщества ВК через sudo aibot setup")}
  enabledProvider:=false;for id,p:=range cfg.Providers{
   if spec,ok:=catalog.Specs[id];ok&&p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){enabledProvider=true}
@@ -123,14 +128,16 @@ func runBot(ctx context.Context,cfg Config)error{
  go func(){defer workers.Done();b.processPending(workerCtx)}()
  go func(){
   defer workers.Done()
-  ticker:=time.NewTicker(12*time.Hour);defer ticker.Stop()
+  timer:=time.NewTimer(catalogRetryDelay(startupErrors,len(catalog.enabled(cfg))))
+  defer timer.Stop()
   for {select{
   case <-workerCtx.Done():return
-  case <-ticker.C:
+  case <-timer.C:
    b.store.cleanup(cfg.RetentionDays)
    ctx2,cancel:=context.WithTimeout(workerCtx,40*time.Second)
    errorsBy:=catalog.refresh(ctx2,cfg);cancel()
    if len(errorsBy)>0{log.Printf("Каталог: %v",errorsBy)}
+   timer.Reset(catalogRetryDelay(errorsBy,len(catalog.enabled(cfg))))
   }}
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
