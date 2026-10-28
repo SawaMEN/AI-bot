@@ -34,6 +34,7 @@ def help_text():
         "• бот поиск вкл / выкл / авто\n"
         "• бот стиль кратко / обычно / подробно\n"
         "• бот контекст 20 — сколько сообщений учитывать\n"
+        "• бот резерв вкл / выкл — использовать ли другую ИИ при сбое\n"
         "• бот настройки — мои действующие настройки\n"
         "• бот сброс — сбросить личные настройки\n\n"
         "Администратору беседы:\n"
@@ -42,6 +43,7 @@ def help_text():
         "• бот диалог поиск авто\n"
         "• бот диалог стиль кратко\n"
         "• бот диалог контекст 20\n"
+        "• бот диалог резерв выкл\n"
         "• бот диалог сброс\n\n"
         "Можно и без слова «бот»: упомяните сообщество ВК и задайте вопрос.\n"
         "Для кнопок: упоминание сообщества + «меню».\n"
@@ -103,6 +105,13 @@ def apply_setting(db, cfg, scope, ident, parts, allowed):
             return "Пример: бот стиль кратко (кратко, обычно, подробно)"
         set_pref(db, scope, ident, "style", STYLES[parts[1].lower()])
         return "Стиль ответа: " + parts[1].lower()
+    if field == "резерв":
+        if len(parts) != 2 or parts[1].lower() not in ("вкл", "выкл", "авто"):
+            return "Пример: бот резерв выкл (вкл, выкл, авто)"
+        value = {"вкл": "on", "выкл": "off", "авто": None}[parts[1].lower()]
+        set_pref(db, scope, ident, "fallback", value)
+        return ("Резервный ИИ: " + ("наследовать настройки" if value is None
+                                   else ("разрешён" if value == "on" else "запрещён")))
     if field == "контекст":
         try:
             count = int(parts[1]) if len(parts) == 2 else -1
@@ -130,7 +139,7 @@ def process_command(cfg, db, peer, sender, question, chat_admin=None):
         return help_text()
     if cmd in ("права", "разрешения", "подключение") and not args:
         return permission_text(cfg)
-    if cmd == "выбор" and " ".join(args).lower() in ("поиска", "стиля", "контекста"):
+    if cmd == "выбор" and " ".join(args).lower() in ("поиска", "стиля", "контекста", "резерва"):
         return "Выберите значение кнопками под этим сообщением. Изменение касается только вас."
 
     if cmd == "модели":
@@ -147,6 +156,7 @@ def process_command(cfg, db, peer, sender, question, chat_admin=None):
             "Поиск: " + SEARCH_LABEL[state["search"]] + "\n"
             "Стиль: " + STYLE_LABEL[state["style"]] + "\n"
             "Контекст: " + str(state["context_messages"]) + " сообщений\n"
+            "Резервный ИИ: " + ("разрешён" if state["fallback"] else "выключен") + "\n"
             "Изменение: бот меню"
         )
     if cmd == "диалог":
@@ -168,10 +178,11 @@ def process_command(cfg, db, peer, sender, question, chat_admin=None):
                               "по умолчанию") + "\n"
                 "Поиск: " + SEARCH_LABEL.get(chat.get("search"), "по умолчанию") + "\n"
                 "Стиль: " + STYLE_LABEL.get(chat.get("style"), "по умолчанию") + "\n"
-                "Контекст: " + str(chat.get("context_messages") or "по умолчанию") +
+                "Контекст: " + str(chat.get("context_messages") or "по умолчанию") + "\n"
+                "Резерв: " + {"on": "включён", "off": "выключен"}.get(chat.get("fallback"), "по умолчанию") +
                 "\nМенять может только администратор беседы. Пример: бот диалог модель 2"
             )
-        if args[0].lower() not in ("модель", "поиск", "стиль", "контекст", "сброс", "сбросить"):
+        if args[0].lower() not in ("модель", "поиск", "стиль", "контекст", "резерв", "сброс", "сбросить"):
             return "Пример: бот диалог модель 2. Команды: бот меню"
         if not chat_admin or not chat_admin():
             return "Настройки беседы может менять только администратор. Проверить права через ВК не удалось или прав недостаточно."
