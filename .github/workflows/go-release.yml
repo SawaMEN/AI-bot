@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: go-release-main
+  cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
