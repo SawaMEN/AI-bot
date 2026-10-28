@@ -15,6 +15,7 @@ import (
  "net/url"
  "os/exec"
  "strconv"
+ "sync/atomic"
  "time"
 )
 
@@ -27,7 +28,9 @@ func secretToken()string{raw:=make([]byte,24);_,_=rand.Read(raw);return base64.R
 func webServe(_ Config,c *Catalog)error{
  cfg,err:=loadConfig();if err!=nil{return err}
  ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);c.refresh(ctx,cfg);cancel()
- secret:=secretToken();csrf:=secretToken();notice:=""
+ secret:=secretToken();csrf:=secretToken()
+ var notice atomic.Value
+ notice.Store("")
  tmpl,err:=template.New("admin").Parse(adminHTML);if err!=nil{return err}
  listener,err:=net.Listen("tcp","127.0.0.1:8765");if err!=nil{return err};defer listener.Close()
  fmt.Println("Создайте SSH-туннель на своём компьютере: ssh -L 8765:127.0.0.1:8765 USER@SERVER")
@@ -46,21 +49,25 @@ func webServe(_ Config,c *Catalog)error{
    r.Body=http.MaxBytesReader(w,r.Body,8192);if r.ParseForm()!=nil{http.Error(w,"bad form",400);return}
    if subtle.ConstantTimeCompare([]byte(r.Form.Get("csrf")),[]byte(csrf))!=1{http.Error(w,"CSRF",403);return}
    current,err:=loadConfig();if err!=nil{http.Error(w,"config read error",500);return}
-   notice,err=applyWebForm(&current,c,r.Form)
-   if err!=nil{notice="Ошибка: "+err.Error()}else if r.Form.Get("action")=="restart"{
-    cmd:=exec.Command("systemctl","restart","ai-bot");cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
-    if cmd.Run()!=nil{notice="Не удалось перезапустить службу"}
+   status,err:=applyWebForm(&current,c,r.Form)
+   if err!=nil{status="Ошибка: "+err.Error()}else if r.Form.Get("action")=="restart"{
+    ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second)
+    cmd:=exec.CommandContext(ctx,"systemctl","restart","ai-bot")
+    cmd.Stdout=io.Discard;cmd.Stderr=io.Discard
+    if cmd.Run()!=nil{status="Не удалось перезапустить службу"}
+    cancel()
    }else{
-    if err=saveConfig(current);err!=nil{notice="Ошибка сохранения: "+err.Error()}
-    if r.Form.Get("action")=="provider"{
+    if err=saveConfig(current);err!=nil{status="Ошибка сохранения: "+err.Error()}
+    if err==nil&&r.Form.Get("action")=="provider"{
      ctx,cancel:=context.WithTimeout(r.Context(),20*time.Second);c.refresh(ctx,current);cancel()
     }
    }
+   notice.Store(status)
    http.Redirect(w,r,"/",http.StatusSeeOther);return
   }
   if r.Method!="GET"{http.Error(w,"method",405);return}
   current,err:=loadConfig();if err!=nil{http.Error(w,"config error",500);return}
-  list:=c.enabled(current);data:=webData{CSRF:csrf,Notice:notice,Allowed:list,Labels:map[string]string{},Search:current.SearchEnabled,Fallback:current.FreeFallback}
+  list:=c.enabled(current);data:=webData{CSRF:csrf,Notice:notice.Load().(string),Allowed:list,Labels:map[string]string{},Search:current.SearchEnabled,Fallback:current.FreeFallback}
   for _,id:=range list{data.Labels[id]=c.label(id)}
   for _,id:=range c.Order{p:=c.Specs[id];settings:=current.Providers[id];data.Providers=append(data.Providers,webProvider{id,p.Name,p.KeyURL,settings.Enabled,contains(current.AutoModelsProviders,id)})}
   data.Fields=[]webField{{"context_messages","Макс. сообщений контекста",current.ContextMessages},{"context_hours","Часов контекста",current.ContextHours},{"retention_days","Дней хранения",current.RetentionDays},{"max_requests_hour","Общий лимит в час",current.MaxRequestsHour},{"max_user_requests_hour","Лимит участника",current.MaxUserRequestsHour},{"max_chat_requests_hour","Лимит беседы",current.MaxChatRequestsHour}}
