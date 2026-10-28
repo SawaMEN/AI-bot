@@ -73,7 +73,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.send(ctx,m,text,"");err!=nil{return err}
- b.store.answer(m,text,b.cfg.GroupID)
+ if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
 }
 func(b *Bot) processPending(ctx context.Context){
