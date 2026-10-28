@@ -16,11 +16,12 @@ import (
 )
 
 const vkVersion="5.199"
+var vkAPIBaseURL="https://api.vk.com/method/"
 type VK struct{token string;groupID int64;client *http.Client}
 func newVK(cfg Config)*VK{return &VK{cfg.VKToken,cfg.GroupID,&http.Client{Timeout:40*time.Second}}}
 func (v *VK) call(ctx context.Context,method string,args url.Values)(json.RawMessage,error){
  if args==nil{args=url.Values{}};args.Set("access_token",v.token);args.Set("v",vkVersion)
- req,err:=http.NewRequestWithContext(ctx,"POST","https://api.vk.com/method/"+method,strings.NewReader(args.Encode()))
+ req,err:=http.NewRequestWithContext(ctx,"POST",vkAPIBaseURL+method,strings.NewReader(args.Encode()))
  if err!=nil{return nil,err};req.Header.Set("Content-Type","application/x-www-form-urlencoded")
  response,err:=v.client.Do(req);if err!=nil{return nil,err};defer response.Body.Close()
  if response.StatusCode!=200{return nil,fmt.Errorf("ВК HTTP %d",response.StatusCode)}
@@ -46,6 +47,34 @@ func (v *VK) answerButton(ctx context.Context,peer,user int64,id string)error{
  vals:=url.Values{"peer_id":{strconv.FormatInt(peer,10)},"user_id":{strconv.FormatInt(user,10)},"event_id":{id},"event_data":{string(data)}}
  _,err:=v.call(ctx,"messages.sendMessageEventAnswer",vals);return err
 }
+// setLongPollEvents changes only requested events; it is called only after
+// explicit confirmation in the local administrator menu. Community tokens
+// may lack permissions; a VK API error must never be concealed.
+func (v *VK) setLongPollEvents(ctx context.Context) error {
+ if v.groupID<1||v.token==""{return errors.New("укажите токен и ID сообщества")}
+ raw,err:=v.call(ctx,"groups.setLongPollSettings",url.Values{
+  "group_id":{strconv.FormatInt(v.groupID,10)},
+  "enabled":{"1"},"message_new":{"1"},"message_event":{"1"},
+ })
+ if err!=nil{return err}
+ var number int
+ if json.Unmarshal(raw,&number)==nil&&number==1{return nil}
+ var boolean bool
+ if json.Unmarshal(raw,&boolean)==nil&&boolean{return nil}
+ return errors.New("ВК не подтвердил изменение событий Long Poll")
+}
+
+// Some VK API versions return 0/1, others true/false for event flags.
+func vkEnabled(raw json.RawMessage)bool{
+ var boolean bool
+ if json.Unmarshal(raw,&boolean)==nil{return boolean}
+ var number int
+ if json.Unmarshal(raw,&number)==nil{return number!=0}
+ var value string
+ if json.Unmarshal(raw,&value)==nil{return value=="1"||strings.EqualFold(value,"true")}
+ return false
+}
+
 func (v *VK) admin(ctx context.Context,peer,user int64)bool{
  vals:=url.Values{"peer_id":{strconv.FormatInt(peer,10)},"group_id":{strconv.FormatInt(v.groupID,10)}}
  raw,err:=v.call(ctx,"messages.getConversationMembers",vals);if err!=nil{return false}

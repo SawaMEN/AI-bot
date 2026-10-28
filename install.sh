@@ -10,7 +10,7 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.0.0"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.1.0"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "Загрузка готового бинарного AI-bot Go для $ARCH..."

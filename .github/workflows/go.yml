@@ -1,7 +1,7 @@
 name: Go native
 on:
   push:
-    branches: [main, rewrite/go-native]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 jobs:
@@ -15,6 +15,7 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: true
+      - run: bash -n install.sh
       - run: go mod tidy
       - run: gofmt -w go/*.go
       - run: go vet ./go/...

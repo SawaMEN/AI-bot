@@ -122,11 +122,26 @@ func(w Wizard) behavior(cfg *Config){
  cfg.SearchEnabled=w.yes("Разрешить поиск в интернете",cfg.SearchEnabled)
  cfg.FreeFallback=w.yes("Разрешить резервный бесплатный ИИ (передаст контекст другому провайдеру)",cfg.FreeFallback)
 }
+func (w Wizard) configureVKEvents(cfg Config){
+ fmt.Fprintln(w.out, "Это изменит настройки событий ВК для сообщества. Другие боты тоже могут использовать Long Poll.")
+ fmt.Fprintln(w.out, "Будут включены только Long Poll, message_new и message_event; остальные события специально не отключаются.")
+ if w.ask("Для подтверждения введите ДА", "нет")!="ДА"{
+  fmt.Fprintln(w.out,"Изменения отменены.");return
+ }
+ ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel()
+ if err:=newVK(cfg).setLongPollEvents(ctx);err!=nil{
+  fmt.Fprintln(w.out,"VK API не разрешил изменение:",err)
+  fmt.Fprintln(w.out,"Включите Long Poll, message_new и message_event в настройках сообщества вручную.")
+  return
+ }
+ fmt.Fprintln(w.out,"События включены. Проверка:",vkDiagnostics(ctx,cfg))
+}
+
 func service(action string){cmd:=exec.Command("systemctl",action,"ai-bot");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;_ =cmd.Run()}
 func menu(w Wizard,cfg Config,c *Catalog){
  for {
-  fmt.Fprintln(w.out,"\n===== AI-bot — Go =====\n1. Настроить ВК\n2. Бесплатные провайдеры и модели\n3. Контекст/поиск/лимиты\n4. Диагностика\n5. Перезапустить\n6. Журнал\n7. Очистить историю\n8. Веб-панель через SSH\n0. Выход")
-  choice:=w.integer("Пункт",0,0,8)
+  fmt.Fprintln(w.out,"\n===== AI-bot — Go =====\n1. Настроить ВК\n2. Бесплатные провайдеры и модели\n3. Контекст/поиск/лимиты\n4. Диагностика\n5. Перезапустить\n6. Журнал\n7. Очистить историю\n8. Веб-панель через SSH\n9. Включить события ВК (с подтверждением)\n0. Выход")
+  choice:=w.integer("Пункт",0,0,9)
   if choice==0{return}
   switch choice{
   case 1:w.setupVK(&cfg);_ =saveConfig(cfg);service("restart")
@@ -137,6 +152,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
   case 6:cmd:=exec.Command("journalctl","-u","ai-bot","-n","60","--no-pager");cmd.Stdout=w.out;_ =cmd.Run()
   case 7:if w.ask("Для удаления истории напишите ДА","нет")=="ДА"{s,err:=openStore(dataPath());if err==nil{s.clearMessages();s.close()}}
   case 8:if err:=webServe(cfg,c);err!=nil{fmt.Fprintln(w.out,"Веб-панель:",err)}
+  case 9:w.configureVKEvents(cfg)
   }
  }
 }
@@ -160,6 +176,7 @@ func run()error{
   service("restart")
  case "menu":menu(w,cfg,catalog)
  case "doctor","status":fmt.Println(doctor(context.Background(),cfg))
+ case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
  case "logs":cmd:=exec.Command("journalctl","-u","ai-bot","-n","70","--no-pager");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;return cmd.Run()
  case "restart":service("restart")
@@ -167,7 +184,7 @@ func run()error{
  case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
  case "behavior":w.behavior(&cfg);return saveConfig(cfg)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();s.clearMessages()
- default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, api, behavior, clear")
+ default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear")
  }
  return nil
 }

@@ -137,10 +137,17 @@ func vkDiagnostics(ctx context.Context,cfg Config)string{
  v:=newVK(cfg)
  raw,err:=v.call(ctx,"groups.getLongPollSettings",url.Values{"group_id":{fmt.Sprint(cfg.GroupID)}})
  if err!=nil{return "VK API: "+err.Error()}
- var result struct{Enabled int `json:"is_enabled"`;Events map[string]int `json:"events"`}
- _=json.Unmarshal(raw,&result)
- return fmt.Sprintf("Long Poll: %t; message_new: %t; message_event: %t. Доступ к переписке назначается администратором каждой беседы.",
- result.Enabled!=0,result.Events["message_new"]!=0,result.Events["message_event"]!=0)
+ var result struct{
+  Enabled json.RawMessage `json:"is_enabled"`
+  Alternative json.RawMessage `json:"enabled"`
+  Events map[string]json.RawMessage `json:"events"`
+ }
+ if err:=json.Unmarshal(raw,&result);err!=nil{return "Не удалось прочитать настройки Long Poll ВК"}
+ enabled:=vkEnabled(result.Enabled)||vkEnabled(result.Alternative)
+ messageNew:=vkEnabled(result.Events["message_new"])
+ messageEvent:=vkEnabled(result.Events["message_event"])
+ return fmt.Sprintf("Long Poll: %t; message_new: %t; message_event: %t. Доступ ко всей переписке назначается администратором каждой беседы.",
+ enabled,messageNew,messageEvent)
 }
 func doctor(ctx context.Context,cfg Config)string{
  c,err:=newCatalog();if err!=nil{return err.Error()}
