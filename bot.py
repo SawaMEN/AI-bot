@@ -2,6 +2,8 @@
 """AI-bot для ВК. Один процесс, SQLite, Bots Long Poll."""
 import json
 import logging
+import queue
+import threading
 import signal
 import sys
 import time
@@ -93,7 +95,7 @@ def is_chat_admin(cfg, peer, sender):
     return False
 
 
-def handle_message(cfg, db, item, cooldowns):
+def handle_message(cfg, db, item, cooldowns, pre_recorded=False):
     if not isinstance(item, dict) or item.get("out"):
         return
     try:
@@ -109,7 +111,7 @@ def handle_message(cfg, db, item, cooldowns):
     message_id = item.get("conversation_message_id") or item.get("id")
     if not message_id:
         return
-    if not db.add(peer, sender, f"vk:{peer}:{message_id}", text):
+    if not pre_recorded and not db.add(peer, sender, f"vk:{peer}:{message_id}", text):
         return
 
     reply = item.get("reply_message") or {}
@@ -219,6 +221,41 @@ def handle_button_event(cfg, db, data):
     if result is not None:
         send(cfg, peer, result, keyboard=for_command(command, cfg))
 
+def record_incoming(db, item):
+    """Главный поток сохраняет сообщения ВСЕХ участников до запуска ИИ."""
+    if not isinstance(item, dict) or item.get("out"):
+        return False
+    try:
+        peer, sender = int(item["peer_id"]), int(item["from_id"])
+        mid = item.get("conversation_message_id") or item.get("id")
+        content = str(item.get("text") or "").strip()
+        if sender <= 0 or not mid or not content:
+            return False
+        return db.add(peer, sender, f"vk:{peer}:{mid}", content)
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def answer_worker(cfg, jobs, stop_event, db_path=None):
+    """Один поток отвечает по порядку, не блокируя VK Long Poll."""
+    db = History(db_path) if db_path is not None else History()
+    cooldowns = {}
+    try:
+        while not stop_event.is_set() or not jobs.empty():
+            try:
+                item = jobs.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                handle_message(cfg, db, item, cooldowns, pre_recorded=True)
+            except Exception:
+                LOG.exception("Ошибка фоновой обработки обращения")
+            finally:
+                jobs.task_done()
+    finally:
+        db.db.close()
+
+
 def run():
     cfg = load_config()
     # Каталог подгружается в оперативную память. Неизвестные цены и сбои API
@@ -235,7 +272,11 @@ def run():
         LOG.warning("Каталог недоступен: бот запущен без моделей. Повторная проверка через 10 минут.")
     db = History()
     db.cleanup(cfg["retention_days"])
-    cooldowns = {}
+    jobs = queue.Queue(maxsize=128)
+    worker_stop = threading.Event()
+    worker = threading.Thread(target=answer_worker, args=(cfg, jobs, worker_stop),
+                              daemon=True, name="ai-answers")
+    worker.start()
     server_data = None
     retries = 0
     handled = 0
@@ -284,7 +325,19 @@ def run():
                     if event_type == "message_event":
                         handle_button_event(cfg, db, obj)
                     else:
-                        handle_message(cfg, db, obj.get("message", obj), cooldowns)
+                        item = obj.get("message", obj)
+                        if record_incoming(db, item):
+                            reply = item.get("reply_message") or {}
+                            question = trigger_question(
+                                item.get("text", ""), cfg["group_id"], cfg["trigger"],
+                                isinstance(reply, dict) and reply.get("from_id") == -int(cfg["group_id"]))
+                            if question is not None:
+                                try:
+                                    jobs.put_nowait(item)
+                                except queue.Full:
+                                    LOG.warning("Очередь ИИ переполнена; история сохранена")
+                                    send(cfg, int(item["peer_id"]),
+                                         "Бот перегружен. Повторите обращение позже.")
                 except Exception:
                     LOG.exception("Ошибка обработки события ВК")
                 handled += 1
