@@ -157,6 +157,10 @@ func panelSetupDomain(domain string)(string,error){
   return "",errors.New("панель уже запущена: сначала выполните sudo aibot panel off")
  }
  // Never stop an existing VPN, Caddy, nginx, HAProxy or firewall.
+ // Do not hijack an existing local panel process either.
+ if !portFree(8765){
+  return "",errors.New("локальный порт панели 8765 занят. Закройте другой экземпляр панели; настройки VPN не меняются")
+ }
  if !portFree(80)||!portFree(443){
   return "",errors.New("80 или 443 уже занят. Ничего не изменено; используйте sudo aibot menu или SSH-панель. VPN не трогаем")
  }
