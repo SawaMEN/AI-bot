@@ -140,7 +140,7 @@ func (w Wizard) configureVKEvents(cfg Config){
 func service(action string){cmd:=exec.Command("systemctl",action,"ai-bot");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;_ =cmd.Run()}
 func menu(w Wizard,cfg Config,c *Catalog){
  for {
-  fmt.Fprintln(w.out,"\n===== AI-bot — Go =====\n1. Настроить ВК\n2. Бесплатные провайдеры и модели\n3. Контекст/поиск/лимиты\n4. Диагностика\n5. Перезапустить\n6. Журнал\n7. Очистить историю\n8. Веб-панель через SSH\n9. Включить события ВК (с подтверждением)\n0. Выход")
+  fmt.Fprintln(w.out,"\n===== AI-bot — Go =====\n1. Настроить ВК\n2. Бесплатные провайдеры и модели\n3. Контекст/поиск/лимиты\n4. Диагностика\n5. Перезапустить\n6. Журнал\n7. Очистить историю\n8. Панель: домен/сертификат или только терминал\n9. Включить события ВК (с подтверждением)\n0. Выход")
   choice:=w.integer("Пункт",0,0,9)
   if choice==0{return}
   switch choice{
@@ -151,7 +151,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
   case 5:service("restart")
   case 6:cmd:=exec.Command("journalctl","-u","ai-bot","-n","60","--no-pager");cmd.Stdout=w.out;_ =cmd.Run()
   case 7:if w.ask("Для удаления истории напишите ДА","нет")=="ДА"{s,err:=openStore(dataPath());if err!=nil{fmt.Fprintln(w.out,err)}else{if err=s.clearMessages();err!=nil{fmt.Fprintln(w.out,"Ошибка очистки:",err)};s.close()}}
-  case 8:if err:=webServe(cfg,c);err!=nil{fmt.Fprintln(w.out,"Веб-панель:",err)}
+  case 8:w.panelMenu()
   case 9:w.configureVKEvents(cfg)
   }
  }
@@ -163,6 +163,10 @@ func run()error{
   ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
   return runBot(ctx,cfg)
  }
+ if command=="panel"&&len(os.Args)>2&&os.Args[2]=="serve" {
+  if os.Geteuid()!=0{return errors.New("доменная панель запускается только системной службой")}
+  return webServeDomain(catalog)
+ }
  w:=Wizard{bufio.NewReader(os.Stdin),os.Stdout}
  if command=="is-configured"{
   connected:=false;for id,p:=range cfg.Providers{spec:=catalog.Specs[id];if p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){connected=true}}
@@ -170,7 +174,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.3.1")
+ case "version","--version":fmt.Println("AI-bot Go v1.4.0")
  case "setup":
   w.setupVK(&cfg);w.setupModels(&cfg,catalog);w.behavior(&cfg)
   if err=saveConfig(cfg);err!=nil{return err};fmt.Fprintln(os.Stdout,"Настройки сохранены. Проверка: sudo aibot doctor")
@@ -179,13 +183,14 @@ func run()error{
  case "doctor","status":fmt.Println(doctor(context.Background(),cfg))
  case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
+ case "panel":return panelCommand(w,os.Args[2:])
  case "logs":cmd:=exec.Command("journalctl","-u","ai-bot","-n","70","--no-pager");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;return cmd.Run()
  case "restart":service("restart")
  case "vk":w.setupVK(&cfg);return saveConfig(cfg)
  case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
  case "behavior":w.behavior(&cfg);return saveConfig(cfg)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
- default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear, version")
+ default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear, version, panel setup ДОМЕН, panel status, panel off, panel reset")
  }
  return nil
 }
