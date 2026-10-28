@@ -134,6 +134,10 @@ class History:
         self.db.execute("""CREATE TABLE IF NOT EXISTS meta (
             name TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL
         )""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS pending (
+            event_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
+        )""")
         from ai_bot.preferences import init_preferences
         init_preferences(self.db)
         self.db.commit()
@@ -190,11 +194,50 @@ class History:
             self.db.execute("DELETE FROM meta WHERE name=?", ("vk_cursor:" + str(group_id),))
 
 
+    @staticmethod
+    def pending_id(item):
+        mid = item.get("conversation_message_id") or item.get("id")
+        return f"vk:{int(item['peer_id'])}:{mid}"
+
+    def enqueue(self, item):
+        with self.db:
+            row = self.db.execute(
+                "INSERT OR IGNORE INTO pending(event_id,payload,created_at) VALUES (?,?,?)",
+                (self.pending_id(item), json.dumps(item, ensure_ascii=False), int(time.time()))
+            )
+        return row.rowcount == 1
+
+    def pending(self):
+        row = self.db.execute(
+            "SELECT payload,attempts FROM pending ORDER BY created_at,event_id LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0]), row[1]
+        except ValueError:
+            return None
+
+    def is_pending(self, item):
+        return self.db.execute("SELECT 1 FROM pending WHERE event_id=?",
+                               (self.pending_id(item),)).fetchone() is not None
+
+    def retry_pending(self, item):
+        with self.db:
+            self.db.execute("UPDATE pending SET attempts=attempts+1 WHERE event_id=?",
+                            (self.pending_id(item),))
+
+    def finish_pending(self, item):
+        with self.db:
+            self.db.execute("DELETE FROM pending WHERE event_id=?",
+                            (self.pending_id(item),))
+
     def cleanup(self, days):
         cutoff = int(time.time()) - max(1, int(days)) * 86400
         with self.db:
             self.db.execute("DELETE FROM messages WHERE created_at < ?", (cutoff,))
             self.db.execute("DELETE FROM calls WHERE created_at < ?", (int(time.time()) - 86400,))
+            self.db.execute("DELETE FROM pending WHERE created_at < ?", (cutoff,))
 
     def clear(self, peer_id=None):
         with self.db:
