@@ -61,7 +61,7 @@ func checkRussianModels(ctx context.Context,cfg *Config,c *Catalog,out io.Writer
  // without asking the administrator to hand-edit the config.
  probeConfig:=*cfg
  probeConfig.RussianBlockedModels=nil
- keys:=c.enabled(probeConfig)
+ keys:=c.candidates(probeConfig)
  if len(keys)==0{return fmt.Errorf("нет доступных моделей: проверьте ключи и включённые модели")}
  ai:=newAI(c)
  blocked:=0;okCount:=0;unavailable:=0;restored:=0;changed:=false

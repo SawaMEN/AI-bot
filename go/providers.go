@@ -17,7 +17,7 @@ type Message struct {Role string `json:"role"`; Content string `json:"content"`}
 type AI struct{client *http.Client; catalog *Catalog}
 func newAI(c *Catalog)*AI{return &AI{client:&http.Client{Timeout:65*time.Second},catalog:c}}
 func (ai *AI) generate(ctx context.Context,cfg Config,key string,messages []Message)(string,error){
- enabled:=false;for _,id:=range ai.catalog.enabled(cfg){if id==key{enabled=true;break}}
+ enabled:=false;for _,id:=range ai.catalog.candidates(cfg){if id==key{enabled=true;break}}
  if !enabled{return "",errors.New("модель запрещена или больше не бесплатна")}
  provider,model,err:=splitModel(key);if err!=nil{return "",err}
  spec:=ai.catalog.Specs[provider];setting:=cfg.Providers[provider];token:=setting.APIKey;if token==""{token=spec.AnonymousKey}

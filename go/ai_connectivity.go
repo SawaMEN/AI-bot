@@ -54,6 +54,7 @@ func selectedProbeModel(c *Catalog,cfg Config,provider string)string{
  return chosen
 }
 func checkAIConnectivity(ctx context.Context,cfg Config,c *Catalog,out io.Writer,networkOnly bool)error{
+ if !networkOnly{return scanAvailableModels(ctx,cfg,c,out,true)}
  ai:=newAI(c)
  return checkAIConnectivityWith(ctx,cfg,c,out,networkOnly,probeDirectHTTPS,ai.generate)
 }

@@ -136,7 +136,7 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
 func removeExact(list []string,key string)[]string{out:=[]string{};for _,s:=range list{if s!=key{out=append(out,s)}};return out}
 func (c *Catalog) allowedFor(provider string,cfg Config)[]string{
  keys:=c.enabled(cfg);result:=[]string{};for _,key:=range keys{if strings.HasPrefix(key,provider+":"){result=append(result,key)}}
- if len(result)>0{return result}
+ if len(result)>0||c.health!=nil{return result}
  p:=c.Specs[provider];if p.FreePolicy=="curated"{for _,m:=range p.Models{result=append(result,provider+":"+m[0])};return result}
  c.mu.RLock();defer c.mu.RUnlock();for _,m:=range c.verified[provider]{result=append(result,provider+":"+m.ID)}
  return result
@@ -160,12 +160,13 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
   if choice==0{return}
   if choice<=n{w.provider(cfg,c,c.Order[choice-1])}
   if choice==n+1{
-   ctx,cancel:=context.WithTimeout(context.Background(),40*time.Second)
-   problems:=c.refresh(ctx,*cfg);cancel()
+   ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
+   if err:=scanAvailableModels(ctx,*cfg,c,w.out,false);err!=nil{fmt.Fprintln(w.out,"Проверка:",err)}
+   cancel()
    available:=c.enabled(*cfg)
    if len(available)==0{
     fmt.Fprintln(w.out,"✗ Моделей пока нет. Сначала подключите один из сервисов выше и включите подбор.")
-    if len(problems)>0{fmt.Fprintf(w.out,"Ошибка каталога: %v\n",problems)}
+    fmt.Fprintln(w.out,"Для повторной проверки: sudo aibot check-ai")
     continue
    }
    for i,k:=range available{fmt.Fprintf(w.out," %2d. %s\n",i+1,c.label(k))}
@@ -174,11 +175,9 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
    fmt.Fprintln(w.out,"✓ Основная модель сохранена. Она используется по умолчанию в новых ответах.")
   }
   if choice==n+2{
-   ctx,cancel:=context.WithTimeout(context.Background(),40*time.Second)
-   problems:=c.refresh(ctx,*cfg);cancel()
-   fmt.Fprintf(w.out,"Доступно моделей: %d\n",len(c.enabled(*cfg)))
-   if len(problems)>0{fmt.Fprintf(w.out,"Что не удалось проверить: %v\n",problems)
-   }else{fmt.Fprintln(w.out,"✓ Каталоги проверены.")}
+   ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
+   if err:=scanAvailableModels(ctx,*cfg,c,w.out,true);err!=nil{fmt.Fprintln(w.out,"Ошибка проверки:",err)}
+   cancel()
   }
   if choice==n+3{
    changed:=0
@@ -190,8 +189,8 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
    fmt.Fprintf(w.out,"✓ Автоподбор включён для %d дополнительных сервисов.\n",changed)
   }
   if choice==n+4{
-   ctx,cancel:=context.WithTimeout(context.Background(),15*time.Minute)
-   if err:=checkRussianModels(ctx,cfg,c,w.out);err!=nil{fmt.Fprintln(w.out,"Ошибка проверки:",err)}
+   ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
+   if err:=scanAvailableModels(ctx,*cfg,c,w.out,true);err!=nil{fmt.Fprintln(w.out,"Ошибка проверки:",err)}
    cancel()
   }
   if err:=saveConfig(*cfg);err!=nil{fmt.Fprintln(w.out,"✗ Не удалось сохранить настройки:",err)}
@@ -341,6 +340,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
 }
 func run()error{
  cfg,err:=loadConfig();if err!=nil{return err};catalog,err:=newCatalog();if err!=nil{return err}
+ catalog.health=newModelHealth(modelHealthPath())
  command:="menu";if len(os.Args)>1{command=os.Args[1]}
  if command=="run"{
   ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
@@ -357,7 +357,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.3")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.4")
  case "setup":
   fmt.Fprintln(w.out,"=== ПЕРВАЯ НАСТРОЙКА AI-bot ===")
   fmt.Fprintln(w.out,"Нужно сделать всего две вещи: (1) подключить сообщество ВК, (2) выбрать бесплатный ИИ.")
@@ -372,13 +372,13 @@ func run()error{
  case "next":fmt.Fprint(w.out,setupSummary(cfg,catalog));fmt.Fprintln(w.out,nextSetupStep(cfg,catalog))
  case "doctor","status":fmt.Println(doctor(context.Background(),cfg))
  case "check-models":
-  ctx,cancel:=context.WithTimeout(context.Background(),15*time.Minute)
+  ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
   defer cancel()
-  return checkRussianModels(ctx,&cfg,catalog,os.Stdout)
+  return scanAvailableModels(ctx,cfg,catalog,os.Stdout,true)
  case "check-ai":
   networkOnly:=len(os.Args)==3&&os.Args[2]=="network"
   if len(os.Args)>3||len(os.Args)==3&&!networkOnly{return errors.New("использование: sudo aibot check-ai [network]")}
-  ctx,cancel:=context.WithTimeout(context.Background(),10*time.Minute)
+  ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
   defer cancel()
   return checkAIConnectivity(ctx,cfg,catalog,os.Stdout,networkOnly)
  case "vk-events":w.configureVKEvents(cfg)

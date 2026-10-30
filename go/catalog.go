@@ -36,6 +36,7 @@ type Catalog struct {
  verified map[string][]Model
  mu sync.RWMutex
  client *http.Client
+ health *ModelHealth
 }
 // Cloudflare Workers AI model IDs begin with @cf/. Preserve this safe prefix.
 var safeModelID=regexp.MustCompile(`^(?:[A-Za-z0-9]|@[A-Za-z0-9])[A-Za-z0-9_.:/@+\-]{0,178}$`)
@@ -77,7 +78,7 @@ func (c *Catalog) label(key string)string {
  for _,m:=range spec.Models{if len(m)>1&&m[0]==model{return spec.Name+" • "+m[1]}}
  return spec.Name+" • "+model
 }
-func (c *Catalog) enabled(cfg Config) []string {
+func (c *Catalog) candidates(cfg Config) []string {
  c.mu.RLock();defer c.mu.RUnlock()
  result:=[]string{};seen:=map[string]bool{}
  for _,name:=range c.Order {
@@ -101,6 +102,18 @@ func (c *Catalog) enabled(cfg Config) []string {
   }
  }
  return result
+}
+// In production a model is selectable only after a successful authenticated
+// test from this server. Bare Catalog instances in unit tests have no health
+// store and preserve the historical catalogue behavior.
+func (c *Catalog) enabled(cfg Config) []string {
+ candidates:=c.candidates(cfg)
+ if c.health==nil{return candidates}
+ ready:=make([]string,0,len(candidates))
+ for _,key:=range candidates {
+  if c.health.available(cfg,key){ready=append(ready,key)}
+ }
+ return ready
 }
 func (c *Catalog) defaultModel(cfg Config)string {allowed:=c.enabled(cfg);for _,k:=range allowed{if k==cfg.DefaultModel{return k}};if len(allowed)>0{return allowed[0]};return ""}
 func freeZero(v any)bool {switch n:=v.(type){case string:return n=="0"||n=="0.0"||n=="0.000";case float64:return n==0;case json.Number:return n.String()=="0";default:return false}}
