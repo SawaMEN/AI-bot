@@ -229,16 +229,14 @@ func panelStatus()string{
 }
 func (w Wizard) panelMenu(){
  for{
-  fmt.Fprintln(w.out,"\n════════ УПРАВЛЕНИЕ ПАНЕЛЬЮ ════════")
-  fmt.Fprintln(w.out,panelStatus())
-  fmt.Fprintln(w.out,"\nЧто вам удобнее?")
-  fmt.Fprintln(w.out,"  1. Включить панель на своём домене с HTTPS")
-  fmt.Fprintln(w.out,"  2. Проверить, работает ли доменная панель")
-  fmt.Fprintln(w.out,"  3. ✗ ВЫКЛ — отключить доменную панель (бот останется включён)")
-  fmt.Fprintln(w.out,"  4. Временная панель через SSH без домена")
-  fmt.Fprintln(w.out,"  5. Сбросить домен и пароль (только после отключения)")
-  fmt.Fprintln(w.out,"  0. Назад")
-  choice:=w.integer("Номер пункта",0,0,5)
+  choice:=w.chooseMenu("УПРАВЛЕНИЕ ВЕБ-ПАНЕЛЬЮ",panelStatus(),[]menuOption{
+   {1,"Настроить HTTPS на своём домене","Проверка домена, Caddy и TLS; доступ по паролю",""},
+   {2,"Проверить состояние панели","Показать адрес, статус службы и настройки",""},
+   {3,"Отключить доменную панель","Бот ВК и остальные сервисы продолжат работать",""},
+   {4,"Временная панель через SSH","Панель только через локальный SSH-туннель",""},
+   {5,"Сбросить домен и пароль","Возможен только после отключения веб-панели","Осторожно"},
+   {0,"Назад","Вернуться к главному меню",""},
+  })
   switch choice{
   case 0:return
   case 1:
@@ -250,7 +248,8 @@ func (w Wizard) panelMenu(){
    fmt.Fprintln(w.out,"AI-bot не будет отключать VPN, изменять файрвол или занимать уже используемый порт.")
    domain:=strings.ToLower(strings.TrimSpace(w.ask("Домен (без https://, например ai.example.com)","")))
    if w.ask("Начать установку? Напишите ДА","нет")!="ДА"{fmt.Fprintln(w.out,"Отменено.");continue}
-   pass,err:=panelSetupDomain(domain)
+   var pass string;var err error
+   consoleSpinner(w.out,"Настройка HTTPS-панели и службы",func(){pass,err=panelSetupDomain(domain)})
    if err!=nil{
     fmt.Fprintln(w.out,"✗ Доменная панель не настроена:",err)
     fmt.Fprintln(w.out,"Можно использовать только терминал: sudo aibot menu")
@@ -276,6 +275,7 @@ func (w Wizard) panelMenu(){
     }else{fmt.Fprintln(w.out,"✓ Сброшено. Чтобы настроить новый домен, выберите пункт 1.")}
    }
   }
+  w.pauseMenu()
  }
 }
 func panelCommand(w Wizard,args []string)error{
