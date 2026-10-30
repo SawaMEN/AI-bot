@@ -24,7 +24,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  cached,ready,err:=b.store.prepared(m)
  if err!=nil{return err}
  if ready{
-  if err=b.vk.send(ctx,m.PeerID,cached,"","answer:"+m.EventID());err!=nil{return err}
+  if err=b.vk.send(ctx,m.PeerID,cached,answerBoard(),"answer:"+m.EventID());err!=nil{return err}
   return b.store.answer(m,cached,b.cfg.GroupID)
  }
  question,mentioned:=questionFor(b.cfg,m);if !mentioned{return nil}
@@ -133,7 +133,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.store.prepare(m,text);err!=nil{return err}
  stopThinking()
- if err:=b.send(ctx,m,text,"");err!=nil{return err}
+ if err:=b.send(ctx,m,text,answerBoard());err!=nil{return err}
  if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
 }
