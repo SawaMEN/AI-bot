@@ -116,6 +116,10 @@ func(h *ModelHealth) saveLocked()error{
 // request from the VDS. A provider being reachable does not prove its models work.
 // No nonresponsive, rate-limited, or English-only model is shown as available.
 func scanAvailableModels(ctx context.Context,cfg Config,c *Catalog,out io.Writer,force bool)error{
+ ai:=newAI(c)
+ return scanAvailableModelsWith(ctx,cfg,c,out,force,ai.generate)
+}
+func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Writer,force bool,generate modelProbe)error{
  if c.health==nil{return errors.New("не включено хранилище проверки моделей")}
  refreshCtx,cancel:=context.WithTimeout(ctx,35*time.Second)
  problems:=c.refresh(refreshCtx,cfg)
@@ -126,7 +130,6 @@ func scanAvailableModels(ctx context.Context,cfg Config,c *Catalog,out io.Writer
   return errors.New("нет моделей для проверки")
  }
  fmt.Fprintf(out,"Проверка всех %d настроенных бесплатных моделей с этого сервера (реальные API-запросы)...\n",len(keys))
- ai:=newAI(c)
  checked,cached:=0,0
  failures:=map[string]int{}
  for _,key:=range keys {
@@ -138,7 +141,7 @@ func scanAvailableModels(ctx context.Context,cfg Config,c *Catalog,out io.Writer
   // answered successfully but did not demonstrate Russian understanding.
   for attempt:=0;attempt<2;attempt++{
    requestCtx,stop:=context.WithTimeout(ctx,30*time.Second)
-   response,err=ai.generate(requestCtx,cfg,key,[]Message{
+   response,err=generate(requestCtx,cfg,key,[]Message{
     {Role:"system",Content:"Проверка доступности и русского языка. Ответь одним коротким предложением только на русском языке."},
     {Role:"user",Content:"Назови столицу России."},
    })
