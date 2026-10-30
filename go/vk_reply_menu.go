@@ -47,8 +47,9 @@ func replyKeyboard(rows [][]replyButton) string {
 
 func replyMainBoard()string{
  return replyKeyboard([][]replyButton{
-  {{"🤖 Выбрать ИИ","модели","positive"},{"⚙ Мои настройки","настройки","primary"}},
-  {{"❓ Помощь","помощь","secondary"},{"🏠 Меню","меню","secondary"}},
+  {{"💬 Задать вопрос","вопрос","positive"}},
+  {{"🤖 Выбрать ИИ","модели","primary"},{"⚙ Мои настройки","настройки","primary"}},
+  {{"❓ Помощь","помощь","secondary"}},
  })
 }
 func replyPersonalBoard()string{
@@ -130,7 +131,7 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
  words:=strings.Fields(strings.ToLower(command))
  if len(words)==0{return replyMainBoard()}
  switch words[0]{
- case "меню","старт":return replyMainBoard()
+ case "меню","старт","вопрос":return replyMainBoard()
  case "настройки":return replyPersonalBoard()
  case "помощь","help","права","разрешения","подключение":return replyHelpBoard()
  case "модели":
@@ -170,7 +171,7 @@ func vkReplyCommand(payload json.RawMessage)string{
  fields:=strings.Fields(strings.ToLower(command))
  if len(fields)==0{return ""}
  switch fields[0]{
- case "меню","старт","помощь","настройки","права","модели","модель",
+ case "меню","старт","вопрос","помощь","настройки","права","модели","модель",
   "выбор","поиск","стиль","контекст","резерв","сброс","сбросить","подтвердить":
   return command
  }
@@ -182,7 +183,7 @@ func vkReplyLabel(text string)string{
  case "🏠 меню","🏠 главное меню":return "меню"
  case "⚙ мои настройки","⚙ настройки":return "настройки"
  case "🤖 выбрать ии","🤖 модель":return "модели"
- case "❓ помощь":return "помощь"
+ case "❓ помощь":return "помощь"\n case "💬 задать вопрос":return "вопрос"
  case "🔎 поиск":return "выбор поиска"
  case "✍ стиль":return "выбор стиля"
  case "🧠 контекст":return "выбор контекста"
