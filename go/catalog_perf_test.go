@@ -27,7 +27,7 @@ func TestFreeCatalogDiscoveryConcurrent(t *testing.T){
   }
   time.Sleep(65*time.Millisecond)
   active.Add(-1)
-  fmt.Fprint(w,`{"data":[{"id":"example/free:free","pricing":{"prompt":"0","completion":"0","input":"0","output":"0"}}]}`)
+  fmt.Fprint(w,`{"data":[{"id":"qwen/free:free","pricing":{"prompt":"0","completion":"0","input":"0","output":"0"}}]}`)
  }))
  defer server.Close()
  c,err:=newCatalog();if err!=nil{t.Fatal(err)}
