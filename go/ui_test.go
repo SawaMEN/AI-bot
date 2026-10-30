@@ -32,7 +32,7 @@ func TestVKGuideExplainsCommunityVersusChat(t *testing.T){
  required:=[]string{
   "Это НЕ беседа","vk.com/club123","Работа с API","Ключи доступа",
   "Long Poll API","message_new","message_event",
-  "добавьте","Доступ ко всей переписке","sudo aibot doctor",
+  "Добавьте","Доступ ко всей переписке","sudo aibot doctor",
  }
  for _,item:=range required{
   if !strings.Contains(guide,item){t.Errorf("VK guide misses %q",item)}
@@ -41,16 +41,15 @@ func TestVKGuideExplainsCommunityVersusChat(t *testing.T){
 }
 
 func TestMenuNavigationHasGuidesAndExit(t *testing.T){
- cfg:=defaults();catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ cfg:=defaults();cfg.SearchEnabled=false;catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
  var output bytes.Buffer
  wizard:=Wizard{in:bufio.NewReader(strings.NewReader("10\n11\n0\n")),out:&output}
  menu(wizard,cfg,catalog)
  body:=output.String()
  for _,fragment:=range []string{
   "AI-bot · УПРАВЛЕНИЕ","✓ ВКЛ","✗ ВЫКЛ",
-  "Где найти ID и токен ВК","ЧТО ДЕЛАТЬ ДАЛЬШЕ","ШAГ 1",
+  "Где найти ID и токен ВК","ЧТО ДЕЛАТЬ ДАЛЬШЕ",
  }{
-  if fragment=="ШAГ 1"{continue}
   if !strings.Contains(body,fragment){t.Errorf("menu does not contain %q",fragment)}
  }
  if !strings.Contains(body,"ШАГ 1")||!strings.Contains(body,"ШАГ 6"){
