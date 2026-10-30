@@ -94,18 +94,22 @@ func TestVKGroupConfigMutationsRequireAdmin(t *testing.T){
  processCommand(context.Background(),v,store,c,cfg,peer,user,"диалог подтвердить сброс")
  if store.getPref("chat",peer).Search!=""{t.Fatal("reset confirmation failed")}
 }
-func TestVKMenuEditsPrivateButNotShared(t *testing.T){
+func TestVKLegacyCallbacksInstallPermanentPrivateMenu(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
  store,err:=openStore(filepath.Join(t.TempDir(),"vk-edit.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
  var edits,sends,snacks atomic.Int32
+ var privateInline,groupInline bool
  server:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   switch r.URL.Path{
-  case "/method/messages.edit":
-   edits.Add(1)
+  case "/method/messages.edit":edits.Add(1)
+  case "/method/messages.send":
+   sends.Add(1)
    if err:=r.ParseForm();err!=nil{t.Error(err)}
-   if r.Form.Get("conversation_message_id")!="37"{t.Errorf("wrong edit id %s",r.Form.Get("conversation_message_id"))}
-  case "/method/messages.send":sends.Add(1)
+   var keyboard struct{Inline bool `json:"inline"`;OneTime bool `json:"one_time"`}
+   if err:=json.Unmarshal([]byte(r.Form.Get("keyboard")),&keyboard);err!=nil{t.Error(err)}
+   if r.Form.Get("peer_id")=="42"{privateInline=keyboard.Inline}
+   if r.Form.Get("peer_id")=="2000000001"{groupInline=keyboard.Inline}
   case "/method/messages.sendMessageEventAnswer":snacks.Add(1)
   default:t.Errorf("unexpected API: %s",r.URL.Path)
   }
@@ -117,9 +121,9 @@ func TestVKMenuEditsPrivateButNotShared(t *testing.T){
  bot:=newBot(cfg,store,c);bot.vk.client=server.Client()
  payload:=[]byte(`{"aibot":1,"command":"настройки"}`)
  bot.button(context.Background(),42,42,"event-1",payload,37)
- if edits.Load()!=1||sends.Load()!=0||snacks.Load()!=1{t.Fatalf("private edit=%d send=%d snack=%d",edits.Load(),sends.Load(),snacks.Load())}
  bot.button(context.Background(),2000000001,42,"event-2",payload,37)
- if edits.Load()!=1||sends.Load()!=1{t.Fatalf("group must send instead of editing shared menu: edit=%d send=%d",edits.Load(),sends.Load())}
+ if edits.Load()!=0||sends.Load()!=2||snacks.Load()!=2{t.Fatalf("edit=%d send=%d snack=%d",edits.Load(),sends.Load(),snacks.Load())}
+ if privateInline||!groupInline{t.Fatalf("private should be persistent, group inline (private=%v group=%v)",privateInline,groupInline)}
 }
 func TestVKMenuModelPagesRetainAutoAndBack(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
