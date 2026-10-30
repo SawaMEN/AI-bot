@@ -38,6 +38,8 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",mainBoard())
  }
  b.cooldowns[m.PeerID]=time.Now()
+ stopThinking:=b.vk.startThinking(ctx,m.PeerID)
+ defer stopThinking()
  recent:=b.store.recent(m.PeerID,min(count+1,100),b.cfg.ContextHours)
  // The current VK message is already saved to history. Do not send it again
  // inside the history AND as the explicit question to the model.
@@ -89,6 +91,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.store.prepare(m,text);err!=nil{return err}
+ stopThinking()
  if err:=b.send(ctx,m,text,"");err!=nil{return err}
  if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil

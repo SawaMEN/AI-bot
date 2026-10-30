@@ -43,6 +43,31 @@ func (v *VK) send(ctx context.Context,peer int64,text,buttons string,stable stri
  if buttons!=""{vals.Set("keyboard",buttons)}
  _,err:=v.call(ctx,"messages.send",vals);return err
 }
+// startThinking periodically refreshes VK's 10-second typing indicator.
+ // It never sends a chat message and stops when the answer is ready or the context ends.
+func (v *VK) startThinking(ctx context.Context,peer int64)func(){
+ return v.startThinkingWithInterval(ctx,peer,5*time.Second)
+}
+func (v *VK) startThinkingWithInterval(ctx context.Context,peer int64,interval time.Duration)func(){
+ activityCtx,cancel:=context.WithCancel(ctx)
+ done:=make(chan struct{})
+ go func(){
+  defer close(done)
+  ticker:=time.NewTicker(interval)
+  defer ticker.Stop()
+  for {
+   if activityCtx.Err()!=nil{return}
+   requestCtx,stop:=context.WithTimeout(activityCtx,3*time.Second)
+   _,_ = v.call(requestCtx,"messages.setActivity",url.Values{
+    "peer_id":{strconv.FormatInt(peer,10)}, "type":{"typing"},
+   })
+   stop()
+   select{case <-activityCtx.Done():return;case <-ticker.C:}
+  }
+ }()
+ var once sync.Once
+ return func(){once.Do(func(){cancel();<-done})}
+}
 func (v *VK) answerButton(ctx context.Context,peer,user int64,id string)error{
  data,_:=json.Marshal(map[string]string{"type":"show_snackbar","text":"Настройка открыта"})
  vals:=url.Values{"peer_id":{strconv.FormatInt(peer,10)},"user_id":{strconv.FormatInt(user,10)},"event_id":{id},"event_data":{string(data)}}
