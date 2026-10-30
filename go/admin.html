@@ -1,21 +1,95 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI-bot Go</title>
-<style>body{font:15px system-ui;background:#141e29;color:#f0f4f8;max-width:920px;margin:auto;padding:22px}section{background:#213043;border-radius:12px;padding:15px;margin:16px 0}input,select,button{padding:8px;border-radius:5px;margin:5px}label{display:inline-block;margin:4px}button{cursor:pointer}a{color:#8fcaff}small{opacity:.8}</style></head><body>
-<h1>AI-bot — Go</h1>{{if .Domain}}<p>Доменная панель: https://{{.Domain}}. HTTPS-сертификат автоматически обновляет Caddy. API-ключи скрыты.</p>{{else}}<p>Локальная панель по SSH. Публичные порты не используются. API-ключи скрыты.</p>{{end}}
-{{if .Notice}}<section><strong>{{.Notice}}</strong></section>{{end}}
-<section><h2>Состояние</h2><p>Бесплатных моделей: {{len .Allowed}}</p><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="restart"><button>Применить и перезапустить бота</button></form></section>
-<section><h2>Основная модель</h2><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="default"><select name="model">{{range .Allowed}}<option value="{{.}}">{{index $.Labels .}}</option>{{end}}</select><button>Сохранить</button></form></section>
-<section><h2>Бесплатные провайдеры</h2><small>Для бесплатной работы отключите платный биллинг у провайдера.</small>{{range .Providers}}
-<form method="post"><h3>{{.Name}}</h3><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="provider"><input type="hidden" name="provider" value="{{.ID}}">
-<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">Как получить бесплатный ключ</a>
-<label><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>Включить</label>
-<label><input type="checkbox" name="auto" {{if .Auto}}checked{{end}}>Автоподбор бесплатных моделей</label>
-<label>API-ключ: <input type="password" name="api_key" placeholder="Пусто = оставить прежний" maxlength="500" autocomplete="new-password"></label>
-<label><input type="checkbox" name="remove_key">Удалить ключ</label>
-{{if eq .ID "cloudflare"}}<label>Account ID <input name="account_id" maxlength="100"></label>{{end}}
-<button>Сохранить</button></form><hr>{{end}}</section>
-<section><h2>Лимиты и контекст</h2><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="settings">
-{{range .Fields}}<label>{{.Label}} <input type="number" name="{{.Key}}" value="{{.Value}}" min="1"></label>{{end}}
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI-bot — управление</title>
+<style>
+:root{color-scheme:dark;--bg:#101722;--panel:#1a2534;--line:#34465e;--text:#eef3f8;--sub:#b4c4d6;--blue:#90c7ff;--green:#90e1b3;--red:#ffaaaa}
+*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);max-width:1010px;margin:auto;padding:18px}
+h1{font-size:27px;margin:4px 0}h2{font-size:19px;margin:0 0 10px}h3{font-size:16px;margin:4px 0 9px}
+p{margin:6px 0 12px}a{color:var(--blue)}small,.muted{color:var(--sub)}section{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:19px;margin:17px 0}
+nav{display:flex;flex-wrap:wrap;gap:12px;margin:17px 0}nav a{border:1px solid var(--line);padding:7px 11px;border-radius:8px;text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.item{border:1px solid var(--line);border-radius:10px;padding:11px}.status{font-weight:700}.on{color:var(--green)}.off{color:var(--red)}
+form{margin:12px 0}label{display:inline-flex;align-items:center;gap:7px;margin:6px 10px 6px 0}input,select,button{font:inherit;color:var(--text);background:#26364a;border:1px solid #52667e;border-radius:7px;padding:9px;max-width:100%}
+input:focus,select:focus,button:focus{outline:2px solid var(--blue)}input[type=checkbox]{width:18px;height:18px}button{cursor:pointer;background:#244a6b;border-color:#5785ae;padding:10px 15px;font-weight:600}
+ol{padding-left:22px}li{margin:6px 0}.provider{padding:14px;border:1px solid var(--line);border-radius:10px;margin:14px 0}.provider form{margin:0}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fields label{display:flex;flex-direction:column;align-items:flex-start}
+.notice{border-color:#8fcaff}code{font-size:.92em;overflow-wrap:anywhere}
+@media(max-width:650px){body{padding:11px}.grid,.fields{grid-template-columns:1fr}section{padding:14px}h1{font-size:23px}nav{gap:6px}}
+</style>
+</head>
+<body>
+<header>
+<h1>AI-bot · управление</h1>
+<p class="muted">{{if .Domain}}Панель по HTTPS: https://{{.Domain}}{{else}}Локальная панель по SSH, без публичных портов{{end}}. Ключи ВК и ИИ после сохранения не показываются.</p>
+</header>
+<nav>
+<a href="#status">Состояние</a><a href="#vk">Подключение ВК</a><a href="#models">Бесплатные ИИ</a><a href="#limits">Контекст и лимиты</a>
+</nav>
+
+<section id="status">
+<h2>1. Что уже настроено?</h2>
+<div class="grid">
+<div class="item"><span class="status {{if .VKReady}}on{{else}}off{{end}}">{{if .VKReady}}✓ Готово{{else}}✗ Не настроено{{end}}</span><p>Сообщество ВКонтакте</p><small>{{if .VKReady}}ID: {{.GroupID}}{{else}}Токен и ID задаются в терминале: sudo aibot menu → пункт 1{{end}}</small></div>
+<div class="item"><span class="status {{if .Allowed}}on{{else}}off{{end}}">{{if .Allowed}}✓ Готово{{else}}✗ Нет моделей{{end}}</span><p>Доступные бесплатные модели: {{len .Allowed}}</p><small>Выберите ИИ ниже или через терминал</small></div>
+<div class="item"><span class="status {{if .Search}}on{{else}}off{{end}}">{{if .Search}}✓ ВКЛ{{else}}✗ ВЫКЛ{{end}}</span><p>Поиск в интернете</p></div>
+<div class="item"><span class="status {{if .Fallback}}on{{else}}off{{end}}">{{if .Fallback}}✓ ВКЛ{{else}}✗ ВЫКЛ{{end}}</span><p>Резервная бесплатная модель</p></div>
+</div>
+<p><strong>Что делать дальше:</strong> {{.NextStep}}</p>
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+<form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="restart"><button type="submit">Перезапустить бота после изменений</button></form>
+</section>
+
+<section id="vk">
+<h2>2. Как подключить ВКонтакте?</h2>
+<p><strong>Сообщество ВК</strong> — отдельная страница (группа или паблик), от имени которой отвечает бот. <strong>Беседа</strong> — чат с участниками, куда добавляют это сообщество.</p>
+<ol>
+<li>Если сообщества нет, создайте его через <a href="https://vk.com/groups" target="_blank" rel="noopener noreferrer">раздел сообществ ВК</a>.</li>
+<li>Узнайте <strong>ID</strong>: если адрес страницы <code>vk.com/club123456</code>, ID — <code>123456</code>. При красивом адресе ищите ID в «Управление».</li>
+<li>Откройте «Управление» → «Настройки» → «Работа с API» → «Ключи доступа». Создайте токен с разрешением на сообщения. <strong>Никому не отправляйте токен.</strong></li>
+<li>Включите «Сообщения сообщества», возможности ботов и в «Long Poll API» события <code>message_new</code> и <code>message_event</code>.</li>
+<li>Добавьте сообщество в нужную беседу ВК. Администратор беседы должен разрешить чтение доступных сообщений.</li>
+<li>На сервере: <code>sudo aibot menu</code> → пункт 1, затем <code>sudo aibot doctor</code>. Проверьте сообщение с упоминанием сообщества.</li>
+</ol>
+<p class="muted">Названия пунктов ВК могут отличаться между веб-версией и приложением. Бот не увидит сообщения до приглашения.</p>
+</section>
+
+<section id="models">
+<h2>3. Бесплатные ИИ-сервисы</h2>
+<p>Выберите сервис, перейдите по ссылке для получения бесплатного ключа и включите его. Провайдер ИИ — это <strong>не</strong> сообщество ВК. Не активируйте платный биллинг.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="default">
+<label>Основная модель <select name="model">{{range .Allowed}}<option value="{{.}}">{{index $.Labels .}}</option>{{end}}</select></label>
+<button type="submit" {{if not .Allowed}}disabled{{end}}>Сохранить основную модель</button>
+</form>
+{{range .Providers}}
+<div class="provider">
+<h3><span class="status {{if .Enabled}}on{{else}}off{{end}}">{{if .Enabled}}✓ ВКЛ{{else}}✗ ВЫКЛ{{end}}</span> — {{.Name}}</h3>
+<p><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">Где получить API-ключ</a></p>
+<form method="post">
+<input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="provider"><input type="hidden" name="provider" value="{{.ID}}">
+<label><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>Включить этот ИИ</label>
+<label><input type="checkbox" name="auto" {{if .Auto}}checked{{end}}>Подбирать подтверждённые бесплатные модели автоматически</label>
+<div><label>API-ключ <input type="password" name="api_key" placeholder="Пусто — сохранить прежний" maxlength="500" autocomplete="new-password"></label>
+<label><input type="checkbox" name="remove_key">Удалить сохранённый ключ</label></div>
+{{if eq .ID "cloudflare"}}<label>Cloudflare Account ID <input name="account_id" placeholder="ID аккаунта, не домен" maxlength="100"></label>{{end}}
+<button type="submit">Сохранить этот сервис</button>
+</form>
+</div>
+{{end}}
+</section>
+
+<section id="limits">
+<h2>4. Контекст и ограничения</h2>
+<p>Контекст — сколько предыдущих сообщений бот учитывает при ответе. Ограничения защищают бесплатные квоты от перегрузки.</p>
+<form method="post">
+<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="settings">
+<div class="fields">{{range .Fields}}<label>{{.Label}} <input type="number" name="{{.Key}}" value="{{.Value}}" min="1" required></label>{{end}}</div>
 <label><input type="checkbox" name="search_enabled" {{if .Search}}checked{{end}}>Поиск в интернете</label>
-<label><input type="checkbox" name="free_fallback" {{if .Fallback}}checked{{end}}>Резервная бесплатная модель</label>
-<button>Сохранить ограничения</button></form></section>
-{{if .Domain}}<p><small>Управление HTTPS и отключение панели: sudo aibot panel. Пароль отображается только при первоначальной настройке.</small></p>{{else}}<p><small>Доступ по SSH-туннелю. Остановить: Ctrl+C.</small></p>{{end}}</body></html>
+<label><input type="checkbox" name="free_fallback" {{if .Fallback}}checked{{end}}>Резервный бесплатный ИИ (вопрос может уйти второму провайдеру)</label>
+<div><button type="submit">Сохранить контекст и лимиты</button></div>
+</form>
+</section>
+<footer><p class="muted">При проблемах с ВК: <code>sudo aibot doctor</code> и <code>sudo aibot logs</code>. {{if .Domain}}Выключить доменную панель без остановки бота: <code>sudo aibot panel off</code>.{{else}}Закрыть эту временную панель: Ctrl+C в терминале.{{end}}</p></footer>
+</body>
+</html>
