@@ -283,7 +283,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
   fmt.Fprintln(w.out,"  7. Удалить сохранённую переписку и очередь")
   fmt.Fprintln(w.out,"  8. Веб-панель по домену / управление без браузера")
   fmt.Fprintln(w.out,"  9. Включить получение сообщений и кнопок ВК")
-  fmt.Fprintln(w.out," 10. Инструкция: где найти ID и токен ВК")
+  fmt.Fprintln(w.out," 10. Где найти ID и токен ВК? (пошаговая инструкция)")
   fmt.Fprintln(w.out," 11. Что делать дальше?")
   fmt.Fprintln(w.out,"  0. Выход")
   fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,c))
