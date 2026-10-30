@@ -36,6 +36,17 @@ func(w Wizard) integer(label string,current,minValue,maxValue int)int{
  for {value:=w.ask(label,strconv.Itoa(current));v,err:=strconv.Atoi(value);if err==nil&&v>=minValue&&v<=maxValue{return v};fmt.Fprintf(w.out,"Введите число от %d до %d.\n",minValue,maxValue)}
 }
 func(w Wizard) yes(label string,current bool)bool{
+ if terminalEnabled(w.out){
+  options:=[]menuOption{
+   {1,"Включить","Да — разрешить эту функцию",""},
+   {2,"Выключить","Нет — не использовать эту функцию",""},
+  }
+  if !current{options[0],options[1]=options[1],options[0]}
+  options=append(options,menuOption{0,"Оставить как есть",switchLabel(current),""})
+  choice:=w.chooseMenu("НАСТРОЙКА • "+label,"Текущее значение: "+switchLabel(current),options)
+  if choice==0{return current}
+  return choice==1
+ }
  fmt.Fprintf(w.out,"  Сейчас: %s. Нажмите Enter, чтобы оставить как есть.\n",switchLabel(current))
  defaultVal:="н";if current{defaultVal="д"}
  val:=strings.ToLower(w.ask(label+" (д/н)",defaultVal))
@@ -238,8 +249,10 @@ func (w Wizard) configureVKEvents(cfg Config){
   fmt.Fprintln(w.out,"Изменения отменены. Настройки ВК не изменены.");return
  }
  ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel()
- if err:=newVK(cfg).setLongPollEvents(ctx);err!=nil{
-  fmt.Fprintln(w.out,"✗ ВК отказал в изменении:",err)
+ var vkErr error
+ consoleSpinner(w.out,"Настройка событий Long Poll ВК",func(){vkErr=newVK(cfg).setLongPollEvents(ctx)})
+ if vkErr!=nil{
+  fmt.Fprintln(w.out,"✗ ВК отказал в изменении:",vkErr)
   fmt.Fprintln(w.out,"Откройте «Работа с API» → «Long Poll API» и включите message_new и message_event вручную.")
   return
  }
