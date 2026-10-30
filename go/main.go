@@ -99,6 +99,9 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
   cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id)
   fmt.Fprintln(w.out,"✓ ВКЛ. Автоподбор включён: бот использует только модели из разрешённого бесплатного каталога.")
  }else{
+  // Probe all models before showing a manual selection. The health filter
+  // intentionally hides models that have not responded from this VDS.
+  cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id)
   if p.FreePolicy!="curated"{
    ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second)
    key:=settings.APIKey;if key==""{key=p.AnonymousKey}
@@ -107,21 +110,24 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
     c.mu.Lock();c.verified[id]=models;c.mu.Unlock()
    }
   }
+  ctx,cancel:=context.WithTimeout(context.Background(),time.Hour)
+  if err:=scanAvailableModels(ctx,*cfg,c,w.out,false);err!=nil{fmt.Fprintln(w.out,"Проверка:",err)}
+  cancel()
   list:=c.allowedFor(id,*cfg)
   if len(list)==0{
    fmt.Fprintln(w.out,"Нет подтверждённых бесплатных моделей. Включите автоподбор позже, когда каталог станет доступен.")
    cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id)
   }else{
-   for i,k:=range list{fmt.Fprintf(w.out,"  %d. %s\n",i+1,c.label(k))}
-   fmt.Fprintln(w.out,"Введите номера нужных моделей через запятую, например: 1,3")
-   raw:=w.ask("Модели","1")
-   for _,entry:=range strings.Split(raw,","){
-    n,err:=strconv.Atoi(strings.TrimSpace(entry))
-    if err==nil&&n>0&&n<=len(list)&&!contains(cfg.EnabledModels,list[n-1]){
-     cfg.EnabledModels=append(cfg.EnabledModels,list[n-1])
-    }
+   labels:=make([]string,len(list))
+   for i,key:=range list{labels[i]=c.label(key)}
+   selected:=w.chooseMany("ВЫБОР БЕСПЛАТНЫХ МОДЕЛЕЙ • "+p.Name,labels)
+   if len(selected)>0{
+    cfg.AutoModelsProviders=removeExact(cfg.AutoModelsProviders,id)
+    for _,i:=range selected{cfg.EnabledModels=append(cfg.EnabledModels,list[i])}
+   }else{
+    // Do not accidentally disable the provider when selection was cancelled.
+    fmt.Fprintln(w.out,"Модели вручную не выбраны. Оставлен автоматический подбор.")
    }
-   if len(c.allowedFor(id,*cfg))==0{cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id)}
   }
   fmt.Fprintln(w.out,"✓ Сервис включён. Выбранные модели можно поменять здесь в любой момент.")
  }
