@@ -141,6 +141,15 @@ func mentionExpression(groupID int64)*regexp.Regexp {
 func questionFor(cfg Config,m VKMessage) (string,bool) {
  if !m.Valid(){return "",false}
  text:=strings.TrimSpace(m.Text)
+ // VK permanent text-keyboard buttons generate message_new rather than a
+ // message_event. They carry a trusted *menu shape*, not a user identity.
+ // Only use these in private chats to avoid hijacking normal group messages.
+ if m.PeerID<2000000000&&m.FromID>0{
+  if command:=vkReplyCommand(m.Payload);command!=""{return command,true}
+  // Some clients omit payload. Accept exact known menu labels; arbitrary
+  // words remain normal messages for the AI.
+  if command:=vkReplyLabel(text);command!=""{return command,true}
+ }
  if len(text)>=len(cfg.Trigger)&&strings.EqualFold(text[:len(cfg.Trigger)],cfg.Trigger) {
   rest:=text[len(cfg.Trigger):]
   if rest==""||strings.ContainsRune(" ,.:;!?\t\n",rune(rest[0])) {return strings.TrimSpace(strings.TrimLeft(rest," ,.:;!?")),true}
