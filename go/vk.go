@@ -43,6 +43,21 @@ func (v *VK) send(ctx context.Context,peer int64,text,buttons string,stable stri
  if buttons!=""{vals.Set("keyboard",buttons)}
  _,err:=v.call(ctx,"messages.send",vals);return err
 }
+// A callback normally comes from the bot's own message. Refresh that
+// keyboard in place instead of filling the group chat with menu messages.
+// VK API may refuse editing old messages; caller falls back to messages.send.
+func (v *VK) editMenu(ctx context.Context,peer,conversationMessageID int64,text,buttons string)error{
+ if peer<=0||conversationMessageID<=0{return errors.New("нет номера сообщения меню")}
+ if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
+ vals:=url.Values{
+  "peer_id":{strconv.FormatInt(peer,10)},
+  "conversation_message_id":{strconv.FormatInt(conversationMessageID,10)},
+  "message":{text},
+ }
+ if buttons!=""{vals.Set("keyboard",buttons)}
+ _,err:=v.call(ctx,"messages.edit",vals)
+ return err
+}
 // startThinking periodically refreshes VK's 10-second typing indicator.
  // It never sends a chat message and stops when the answer is ready or the context ends.
 func (v *VK) startThinking(ctx context.Context,peer int64)func(){
@@ -69,7 +84,7 @@ func (v *VK) startThinkingWithInterval(ctx context.Context,peer int64,interval t
  return func(){once.Do(func(){cancel();<-done})}
 }
 func (v *VK) answerButton(ctx context.Context,peer,user int64,id string)error{
- data,_:=json.Marshal(map[string]string{"type":"show_snackbar","text":"Настройка открыта"})
+ data,_:=json.Marshal(map[string]string{"type":"show_snackbar","text":"Обновляю меню"})
  vals:=url.Values{"peer_id":{strconv.FormatInt(peer,10)},"user_id":{strconv.FormatInt(user,10)},"event_id":{id},"event_data":{string(data)}}
  _,err:=v.call(ctx,"messages.sendMessageEventAnswer",vals);return err
 }
@@ -138,6 +153,17 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
   return strings.TrimSpace(before+" "+after),true
  }
  if m.ReplyMessage!=nil&&m.ReplyMessage.FromID==-cfg.GroupID{return text,true}
+ // Inside a private conversation users expect "меню" and settings commands
+ // to work without addressing the bot. Do not intercept group conversations.
+ if m.PeerID<2000000000&&m.FromID>0 {
+  words:=strings.Fields(strings.ToLower(text))
+  if len(words)>0 {
+   for _,command:=range []string{"меню","старт","помощь","help","настройки","модели","модель",
+    "выбор","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
+    if words[0]==command{return text,true}
+   }
+  }
+ }
  return "",false
 }
 func keyboard(rows [][]struct{Label,Command string})string{
@@ -159,67 +185,136 @@ func board(rows [][]Btn)string{
   line:=[]struct{Label,Command string}{};for _,b:=range row{line=append(line,struct{Label,Command string}{b.Label,b.Command})};typed=append(typed,line)
  };return keyboard(typed)
 }
+// A single unobtrusive menu entry is attached to normal AI answers, so
+// users do not need to remember commands or scroll up to old keyboards.
+func answerBoard()string{
+ return board([][]Btn{{{"⚙ Открыть меню","меню"}}})
+}
+// One entry point in VK, then concise context-sensitive screens.
+// Buttons are stateless callback commands, so the menus survive bot restarts.
 func mainBoard()string{
  return board([][]Btn{
-  {{"Бесплатные ИИ","модели 1"},{"Мои настройки","настройки"}},
-  {{"Поиск","выбор поиска"},{"Стиль ответа","выбор стиля"}},
-  {{"Контекст беседы","выбор контекста"},{"Общие настройки","диалог"}},
-  {{"Резервный ИИ","выбор резерва"},{"Помощь","помощь"}},
-  {{"Как подключить ВК?","права"}},
+  {{"⚙ Мои настройки","настройки"},{"👥 Для беседы","диалог"}},
+  {{"🤖 Выбрать ИИ","модели"},{"ℹ Помощь","помощь"}},
+  {{"🔧 Подключение ВК","права"}},
  })
 }
-func chatBoard()string {
+func personalBoard()string{
  return board([][]Btn{
-  {{"Модель беседы","диалог модели 1"},{"Поиск","диалог выбор поиска"}},
-  {{"Стиль","диалог выбор стиля"},{"Контекст","диалог выбор контекста"}},
-  {{"Резерв","диалог выбор резерва"},{"Сбросить беседу","диалог сброс"}},
-  {{"Меню","меню"}},
+  {{"🤖 Модель","модели"},{"🔎 Поиск","выбор поиска"}},
+  {{"✍ Стиль","выбор стиля"},{"🧠 Контекст","выбор контекста"}},
+  {{"🔄 Резерв","выбор резерва"},{"↺ Сброс","выбор сброса"}},
+  {{"⌂ Главное меню","меню"},{"👥 Для беседы","диалог"}},
+ })
+}
+func chatBoard()string{
+ return board([][]Btn{
+  {{"🤖 Модель беседы","диалог модели 1"},{"🔎 Поиск","диалог выбор поиска"}},
+  {{"✍ Стиль","диалог выбор стиля"},{"🧠 Контекст","диалог выбор контекста"}},
+  {{"🔄 Резерв","диалог выбор резерва"},{"↺ Сброс","диалог выбор сброса"}},
+  {{"⌂ Главное меню","меню"},{"⚙ Мои настройки","настройки"}},
+ })
+}
+func helpBoard()string{
+ return board([][]Btn{
+  {{"⌂ Главное меню","меню"},{"⚙ Настройки","настройки"}},
+  {{"🔧 Права и подключение","права"}},
  })
 }
 func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
- allowed:=c.enabled(cfg);if page<1{page=1};maxPage:=(len(allowed)+3)/4;if maxPage<1{maxPage=1};if page>maxPage{page=maxPage}
+ allowed:=c.enabled(cfg)
+ if page<1{page=1}
+ maxPage:=(len(allowed)+2)/3;if maxPage<1{maxPage=1}
+ if page>maxPage{page=maxPage}
  rows:=[][]Btn{}
- for i:=(page-1)*4;i<min(page*4,len(allowed));i++{
-  prefix:="";if chat{prefix="диалог "}
-  label:=c.label(allowed[i]);if len([]rune(label))>37{label=string([]rune(label)[:37])}
+ prefix:="";back:="настройки"
+ if chat{prefix="диалог ";back="диалог"}
+ for i:=(page-1)*3;i<min(page*3,len(allowed));i++{
+  label:=c.label(allowed[i])
+  if len([]rune(label))>32{label=string([]rune(label)[:31])+"…"}
   rows=append(rows,[]Btn{{fmt.Sprintf("%d. %s",i+1,label),fmt.Sprintf("%sмодель %d",prefix,i+1)}})
  }
- nav:=[]Btn{};prefix:="модели ";if chat{prefix="диалог модели "}
- if page>1{nav=append(nav,Btn{"Назад",prefix+strconv.Itoa(page-1)})}
- if page<maxPage{nav=append(nav,Btn{"Далее",prefix+strconv.Itoa(page+1)})}
+ nav:=[]Btn{}
+ route:="модели ";if chat{route="диалог модели "}
+ if page>1{nav=append(nav,Btn{"◀ Назад",route+strconv.Itoa(page-1)})}
+ if page<maxPage{nav=append(nav,Btn{"Далее ▶",route+strconv.Itoa(page+1)})}
  if len(nav)>0{rows=append(rows,nav)}
- rows=append(rows,[]Btn{{"Меню","меню"}})
+ rows=append(rows,[]Btn{{"✓ Авто • рекомендуется",prefix+"модель авто"}})
+ rows=append(rows,[]Btn{{"← К настройкам",back}})
  return board(rows)
 }
 func choiceBoard(prefix,name string,cfg Config)string{
  rows:=[][]Btn{}
  switch name {
- case "поиска":rows=[][]Btn{{{"АВТО: по необходимости",prefix+"поиск авто"},{"✓ ВКЛ: искать",prefix+"поиск вкл"}},{{"✗ ВЫКЛ: не искать",prefix+"поиск выкл"}}}
- case "стиля":rows=[][]Btn{{{"Кратко",prefix+"стиль кратко"},{"Обычно",prefix+"стиль обычно"}},{{"Подробно",prefix+"стиль подробно"}}}
+ case "поиска":
+  rows=[][]Btn{
+   {{"✓ Авто (рекомендуется)",prefix+"поиск авто"}},
+   {{"Искать всегда",prefix+"поиск вкл"},{"Не искать",prefix+"поиск выкл"}},
+  }
+ case "стиля":
+  rows=[][]Btn{
+   {{"Кратко",prefix+"стиль кратко"},{"Обычно",prefix+"стиль обычно"}},
+   {{"Подробно",prefix+"стиль подробно"}},
+  }
  case "контекста":
-  values:=[]int{5,10,20,30,50,100};used:=map[int]bool{}
-  for _,n:=range values{n=min(cfg.ContextMessages,n);if n<1||used[n]{continue};used[n]=true;rows=append(rows,[]Btn{{fmt.Sprintf("%d сообщений",n),fmt.Sprintf("%sконтекст %d",prefix,n)}});if len(rows)>=5{break}}
- case "резерва":rows=[][]Btn{{{"✓ ВКЛ: резерв",prefix+"резерв вкл"},{"✗ ВЫКЛ: резерв",prefix+"резерв выкл"}},{{"По умолчанию",prefix+"резерв авто"}}}
+  values:=[]int{5,10,20,30,50,100}
+  unique:=[]int{};seen:=map[int]bool{}
+  for _,n:=range values{n=min(cfg.ContextMessages,n);if n>0&&!seen[n]{seen[n]=true;unique=append(unique,n)}}
+  for i:=0;i<len(unique);i+=2{
+   row:=[]Btn{}
+   for j:=i;j<min(i+2,len(unique));j++{
+    n:=unique[j]
+    row=append(row,Btn{fmt.Sprintf("%d сообщений",n),fmt.Sprintf("%sконтекст %d",prefix,n)})
+   }
+   rows=append(rows,row)
+  }
+ case "резерва":
+  rows=[][]Btn{
+   {{"✓ Резерв включён",prefix+"резерв вкл"},{"✗ Резерв выключен",prefix+"резерв выкл"}},
+   {{"Авто • как на сервере",prefix+"резерв авто"}},
+  }
+ case "сброса":
+  rows=[][]Btn{{{"Да, сбросить",prefix+"подтвердить сброс"},{"Отменить",func()string{if prefix=="диалог "{return "диалог"};return "настройки"}()}}}
+ default:
+  if prefix=="диалог "{return chatBoard()}
+  return personalBoard()
  }
- rows=append(rows,[]Btn{{"Меню","меню"}})
+ back:="настройки";if prefix=="диалог "{back="диалог"}
+ if name!="сброса"{rows=append(rows,[]Btn{{"← Назад к настройкам",back}})}
  return board(rows)
 }
 func buttonsFor(command string,c *Catalog,cfg Config)string{
- words:=strings.Fields(strings.ToLower(command));if len(words)==0{return mainBoard()}
- if words[0]=="меню"||words[0]=="помощь"||words[0]=="права"||words[0]=="настройки"{return mainBoard()}
- chat:=false;if words[0]=="диалог"{
-  chat=true;words=words[1:];if len(words)==0{return chatBoard()}
+ words:=strings.Fields(strings.ToLower(command))
+ if len(words)==0{return mainBoard()}
+ switch words[0]{
+ case "меню","старт":return mainBoard()
+ case "помощь","help","права","подключение","разрешения":return helpBoard()
+ case "настройки":return personalBoard()
+ case "модели":
+  page:=1;if len(words)>1{if n,e:=strconv.Atoi(words[1]);e==nil{page=n}}
+  return modelBoard(c,cfg,page,false)
+ }
+ chat:=false
+ if words[0]=="диалог"{
+  chat=true;words=words[1:]
+  if len(words)==0{return chatBoard()}
  }
  prefix:="";if chat{prefix="диалог "}
- if words[0]=="модели"{
-  page:=1;if len(words)>1{if i,err:=strconv.Atoi(words[1]);err==nil{page=i}}
-  return modelBoard(c,cfg,page,chat)
+ if words[0]=="модели"||(chat&&words[0]=="модели")||chat&&words[0]=="модель"&&len(words)>1&&words[1]!="авто"{
+  // "диалог модели <страница>" and "диалог модель <номер>" have
+  // different meanings, so only the plural command opens a page.
+  if words[0]=="модели"{
+   page:=1;if len(words)>1{if n,e:=strconv.Atoi(words[1]);e==nil{page=n}}
+   return modelBoard(c,cfg,page,chat)
+  }
  }
  if words[0]=="выбор"&&len(words)>1{return choiceBoard(prefix,words[1],cfg)}
- if words[0]=="поиск"{return choiceBoard(prefix,"поиска",cfg)}
- if words[0]=="стиль"{return choiceBoard(prefix,"стиля",cfg)}
- if words[0]=="контекст"{return choiceBoard(prefix,"контекста",cfg)}
- if words[0]=="резерв"{return choiceBoard(prefix,"резерва",cfg)}
+ if words[0]=="модель"||words[0]=="поиск"||words[0]=="стиль"||words[0]=="контекст"||
+  words[0]=="резерв"||words[0]=="сброс"||words[0]=="сбросить"||words[0]=="подтвердить"{
+  if chat{return chatBoard()}
+  return personalBoard()
+ }
+ if chat{return chatBoard()}
  return mainBoard()
 }
 func callbackCommand(raw json.RawMessage)string{
@@ -248,7 +343,7 @@ func vkTimestamp(raw json.RawMessage)(string,error){
  for _,r:=range str {if r<'0'||r>'9'{return "",errors.New("недопустимый VK timestamp")}}
  return str,nil
 }
-func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,onButton func(int64,int64,string,json.RawMessage))error{
+func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,onButton func(int64,int64,string,json.RawMessage,int64))error{
  serverURL,key,ts:="","","";fails:=0
  for ctx.Err()==nil{
   if serverURL==""{
@@ -291,8 +386,8 @@ func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,on
      }
     }
    case "message_event":
-    var e struct{PeerID int64 `json:"peer_id"`;UserID int64 `json:"user_id"`;EventID string `json:"event_id"`;Payload json.RawMessage `json:"payload"`}
-    if json.Unmarshal(evt.Object,&e)==nil{onButton(e.PeerID,e.UserID,e.EventID,e.Payload)}
+    var e struct{PeerID int64 `json:"peer_id"`;UserID int64 `json:"user_id"`;EventID string `json:"event_id"`;Payload json.RawMessage `json:"payload"`;ConversationMessageID int64 `json:"conversation_message_id"`}
+    if json.Unmarshal(evt.Object,&e)==nil{onButton(e.PeerID,e.UserID,e.EventID,e.Payload,e.ConversationMessageID)}
    }
   }
   ts=parsedTS;s.setCursor(v.groupID,ts)

@@ -11,6 +11,41 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Unsupported architecture" >&2; exit 1 ;;
 esac
+# Migrate managed legacy timers if this service has write permission.
+# Hardened existing installations can safely run the current hourly schedule
+# until the installer has been re-run once to install the new five-minute unit.
+ensure_fast_update_timer() {
+  local unit=/etc/systemd/system/ai-bot-update.timer
+  [[ -f "$unit" && -w /etc/systemd/system ]] || return 0
+  if ! grep -Eq '^Description=Check AI-bot release (updates hourly|every 5 minutes)$' "$unit"; then
+    return 0
+  fi
+  local candidate
+  candidate=$(mktemp /etc/systemd/system/.ai-bot-timer.XXXXXX) || return 0
+  cat >"$candidate" <<'TIMER_UNIT'
+[Unit]
+Description=Check AI-bot release every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+RandomizedDelaySec=20s
+Unit=ai-bot-update.service
+
+[Install]
+WantedBy=timers.target
+TIMER_UNIT
+  if ! cmp -s "$candidate" "$unit"; then
+    install -m 0644 "$candidate" "$unit"
+    systemctl daemon-reload
+    systemctl try-restart ai-bot-update.timer || true
+    echo "AI-bot: update interval changed to approximately 5 minutes"
+  fi
+  rm -f "$candidate"
+}
+ensure_fast_update_timer
+
 ROOT=/usr/local/lib/ai-bot
 APP="$ROOT/ai-bot"
 UPDATER="$ROOT/ai-bot-update"

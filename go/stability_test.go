@@ -87,7 +87,7 @@ func TestVKPollDoesNotAdvanceCursorOnHandlerError(t *testing.T){
  store,err:=openStore(filepath.Join(t.TempDir(),"history.db"));if err!=nil{t.Fatal(err)};defer store.close()
  v:=newVK(Config{VKToken:"fake",GroupID:123});v.client=server.Client()
  called:=0
- err=vkPoll(context.Background(),v,store,func(VKMessage)error{called++;return errors.New("disk full")},func(int64,int64,string,json.RawMessage){})
+ err=vkPoll(context.Background(),v,store,func(VKMessage)error{called++;return errors.New("disk full")},func(int64,int64,string,json.RawMessage,int64){})
  if err==nil||called!=1{t.Fatalf("handler error not propagated: %v, calls %d",err,called)}
  if store.cursor(123)!=""{t.Fatal("cursor advanced after lost VK event")}
 }

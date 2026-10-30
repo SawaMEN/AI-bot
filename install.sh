@@ -197,13 +197,13 @@ ReadWritePaths=/usr/local/lib/ai-bot /run/lock
 UPDATE_SERVICE
 cat >/etc/systemd/system/ai-bot-update.timer <<'UPDATE_TIMER'
 [Unit]
-Description=Check AI-bot release updates hourly
+Description=Check AI-bot release every 5 minutes
 
 [Timer]
-OnBootSec=10min
-OnCalendar=hourly
-RandomizedDelaySec=10min
-Persistent=true
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+RandomizedDelaySec=20s
 Unit=ai-bot-update.service
 
 [Install]
@@ -211,5 +211,6 @@ WantedBy=timers.target
 UPDATE_TIMER
 systemctl daemon-reload
 systemctl enable --now ai-bot-update.timer
-echo "✓ Автообновление включено: проверка примерно раз в час."
+systemctl restart ai-bot-update.timer
+echo "✓ Автообновление включено: проверка релиза примерно каждые 5 минут."
 echo "  Проверка: systemctl list-timers ai-bot-update.timer"
