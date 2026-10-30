@@ -24,19 +24,19 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  cached,ready,err:=b.store.prepared(m)
  if err!=nil{return err}
  if ready{
-  if err=b.vk.send(ctx,m.PeerID,cached,answerBoard(),"answer:"+m.EventID());err!=nil{return err}
+  if err=b.vk.send(ctx,m.PeerID,cached,answerKeyboardForPeer(m.PeerID),"answer:"+m.EventID());err!=nil{return err}
   return b.store.answer(m,cached,b.cfg.GroupID)
  }
  question,mentioned:=questionFor(b.cfg,m);if !mentioned{return nil}
  answer,command:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,m.PeerID,m.FromID,question)
- if command{return b.send(ctx,m,answer,buttonsFor(question,b.catalog,b.cfg))}
- if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",mainBoard())}
+ if command{return b.send(ctx,m,answer,keyboardForPeer(m.PeerID,question,b.catalog,b.cfg))}
+ if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",homeKeyboardForPeer(m.PeerID))}
  if b.cfg.CooldownSeconds>0&&time.Since(b.cooldowns[m.PeerID])<time.Duration(b.cfg.CooldownSeconds)*time.Second{return nil}
  model,search,style,count,fallback:=b.store.effective(b.cfg,m.PeerID,m.FromID,b.catalog)
- if model==""{return b.send(ctx,m,"Администратор ещё не подключил доступную бесплатную ИИ-модель. sudo aibot",mainBoard())}
+ if model==""{return b.send(ctx,m,"Администратор ещё не подключил доступную бесплатную ИИ-модель. sudo aibot",homeKeyboardForPeer(m.PeerID))}
  total,chat,user:=b.store.counts(m.PeerID,m.FromID)
  if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{
-  return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",mainBoard())
+  return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))
  }
  b.cooldowns[m.PeerID]=time.Now()
  stopThinking:=b.vk.startThinking(ctx,m.PeerID)
@@ -93,7 +93,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
    failures=append(failures,lastErr.Error());break
   }
   if err:=b.store.track(m.PeerID,m.FromID);err!=nil{
-   return b.send(ctx,m,"Ошибка учёта бесплатных запросов. Администратор должен проверить SQLite.",mainBoard())
+   return b.send(ctx,m,"Ошибка учёта бесплатных запросов. Администратор должен проверить SQLite.",homeKeyboardForPeer(m.PeerID))
   }
   cctx,cancel:=context.WithTimeout(ctx,65*time.Second)
   text,lastErr=b.ai.generate(cctx,b.cfg,candidate,messages);cancel()
@@ -133,7 +133,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.store.prepare(m,text);err!=nil{return err}
  stopThinking()
- if err:=b.send(ctx,m,text,answerBoard());err!=nil{return err}
+ if err:=b.send(ctx,m,text,answerKeyboardForPeer(m.PeerID));err!=nil{return err}
  if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
 }
@@ -174,14 +174,11 @@ func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload [
  _=b.vk.answerButton(ctx,peer,user,eventID)
  text,ok:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,peer,user,cmd)
  if !ok{return}
- buttons:=buttonsFor(cmd,b.catalog,b.cfg)
- // In a group an inline menu is shared: editing it in place could
- // expose one participant's personal preferences to everyone, or cause
- // concurrent button presses to overwrite each other's screen. Reuse
- // messages only for private conversations with the community.
- if peer<2000000000&&conversationMessageID>0 {
-  if err:=b.vk.editMenu(ctx,peer,conversationMessageID,text,buttons);err==nil{return}
- }
+ buttons:=keyboardForPeer(peer,cmd,b.catalog,b.cfg)
+ // Persistent keyboards belong to the input area and cannot be created by
+ // editing an old inline message. Respond with a fresh VK message to install
+ // the permanent menu for old callback buttons too. Shared group chat menus
+ // continue to use inline buttons without touching other users' keyboards.
  if err:=b.vk.send(ctx,peer,text,buttons,"callback:"+eventID);err!=nil{
   log.Printf("VK button: %v",err)
  }
