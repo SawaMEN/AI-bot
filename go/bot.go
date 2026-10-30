@@ -101,9 +101,18 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
    if wantsRussian(question)&&nonRussianProse(text) {
     lastErr=errors.New("модель ответила не по-русски")
     b.unavailable[candidate]=time.Now().Add(12*time.Hour)
-   }else{used=candidate;break}
+   }else{
+    used=candidate
+    if b.catalog.health!=nil{
+     if err:=b.catalog.health.record(b.cfg,candidate,true);err!=nil{log.Printf("Сохранение статуса модели: %v",err)}
+    }
+    break
+   }
   }
   if lastErr==nil{lastErr=errors.New("модель вернула пустой ответ")}
+  if b.catalog.health!=nil{
+   if err:=b.catalog.health.record(b.cfg,candidate,false);err!=nil{log.Printf("Сохранение статуса модели: %v",err)}
+  }
   log.Printf("ИИ %s: %v",candidate,lastErr)
   failures=append(failures,b.catalog.label(candidate)+": "+lastErr.Error())
   if _,quarantined:=b.unavailable[candidate];!quarantined{
