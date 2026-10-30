@@ -221,7 +221,7 @@ func (w Wizard) configureVKEvents(cfg Config){
   return
  }
  if w.ask("Для включения через VK API введите ДА","нет")!="ДА"{
-  fmt.Fprintln(w.out,"Настройки ВК не изменены.");return
+  fmt.Fprintln(w.out,"Изменения отменены. Настройки ВК не изменены.");return
  }
  ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel()
  if err:=newVK(cfg).setLongPollEvents(ctx);err!=nil{
