@@ -43,6 +43,21 @@ func (v *VK) send(ctx context.Context,peer int64,text,buttons string,stable stri
  if buttons!=""{vals.Set("keyboard",buttons)}
  _,err:=v.call(ctx,"messages.send",vals);return err
 }
+// A callback normally comes from the bot's own message. Refresh that
+// keyboard in place instead of filling the group chat with menu messages.
+// VK API may refuse editing old messages; caller falls back to messages.send.
+func (v *VK) editMenu(ctx context.Context,peer,conversationMessageID int64,text,buttons string)error{
+ if peer<=0||conversationMessageID<=0{return errors.New("нет номера сообщения меню")}
+ if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
+ vals:=url.Values{
+  "peer_id":{strconv.FormatInt(peer,10)},
+  "conversation_message_id":{strconv.FormatInt(conversationMessageID,10)},
+  "message":{text},
+ }
+ if buttons!=""{vals.Set("keyboard",buttons)}
+ _,err:=v.call(ctx,"messages.edit",vals)
+ return err
+}
 // startThinking periodically refreshes VK's 10-second typing indicator.
  // It never sends a chat message and stops when the answer is ready or the context ends.
 func (v *VK) startThinking(ctx context.Context,peer int64)func(){
@@ -69,7 +84,7 @@ func (v *VK) startThinkingWithInterval(ctx context.Context,peer int64,interval t
  return func(){once.Do(func(){cancel();<-done})}
 }
 func (v *VK) answerButton(ctx context.Context,peer,user int64,id string)error{
- data,_:=json.Marshal(map[string]string{"type":"show_snackbar","text":"Настройка открыта"})
+ data,_:=json.Marshal(map[string]string{"type":"show_snackbar","text":"Обновляю меню"})
  vals:=url.Values{"peer_id":{strconv.FormatInt(peer,10)},"user_id":{strconv.FormatInt(user,10)},"event_id":{id},"event_data":{string(data)}}
  _,err:=v.call(ctx,"messages.sendMessageEventAnswer",vals);return err
 }
@@ -138,6 +153,17 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
   return strings.TrimSpace(before+" "+after),true
  }
  if m.ReplyMessage!=nil&&m.ReplyMessage.FromID==-cfg.GroupID{return text,true}
+ // Inside a private conversation users expect "меню" and settings commands
+ // to work without addressing the bot. Do not intercept group conversations.
+ if m.PeerID<2000000000&&m.FromID>0 {
+  words:=strings.Fields(strings.ToLower(text))
+  if len(words)>0 {
+   for _,command:=range []string{"меню","старт","помощь","help","настройки","модели","модель",
+    "выбор","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
+    if words[0]==command{return text,true}
+   }
+  }
+ }
  return "",false
 }
 func keyboard(rows [][]struct{Label,Command string})string{
@@ -312,7 +338,7 @@ func vkTimestamp(raw json.RawMessage)(string,error){
  for _,r:=range str {if r<'0'||r>'9'{return "",errors.New("недопустимый VK timestamp")}}
  return str,nil
 }
-func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,onButton func(int64,int64,string,json.RawMessage))error{
+func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,onButton func(int64,int64,string,json.RawMessage,int64))error{
  serverURL,key,ts:="","","";fails:=0
  for ctx.Err()==nil{
   if serverURL==""{
@@ -355,8 +381,8 @@ func vkPoll(ctx context.Context,v *VK,s *Store,onMessage func(VKMessage)error,on
      }
     }
    case "message_event":
-    var e struct{PeerID int64 `json:"peer_id"`;UserID int64 `json:"user_id"`;EventID string `json:"event_id"`;Payload json.RawMessage `json:"payload"`}
-    if json.Unmarshal(evt.Object,&e)==nil{onButton(e.PeerID,e.UserID,e.EventID,e.Payload)}
+    var e struct{PeerID int64 `json:"peer_id"`;UserID int64 `json:"user_id"`;EventID string `json:"event_id"`;Payload json.RawMessage `json:"payload"`;ConversationMessageID int64 `json:"conversation_message_id"`}
+    if json.Unmarshal(evt.Object,&e)==nil{onButton(e.PeerID,e.UserID,e.EventID,e.Payload,e.ConversationMessageID)}
    }
   }
   ts=parsedTS;s.setCursor(v.groupID,ts)
