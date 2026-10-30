@@ -18,7 +18,8 @@ func readyLabel(on bool)string {
 // Keep the instructions available in both the terminal and VK help screen.
 func vkSetupGuide(groupID int64)string{
  idHint:="ID сообщества пока не указан."
- if groupID>0{idHint=fmt.Sprintf("Текущий ID сообщества: %d. Ссылка: https://vk.com/club%d",groupID,groupID)}
+ exampleID:=int64(123456)
+ if groupID>0{exampleID=groupID;idHint=fmt.Sprintf("Текущий ID сообщества: %d. Ссылка: https://vk.com/club%d",groupID,groupID)}
  return fmt.Sprintf(`
 КАК ПОДКЛЮЧИТЬ ВКОНТАКТЕ
 
@@ -66,7 +67,7 @@ func vkSetupGuide(groupID int64)string{
   Если ответа нет, проверьте журнал: sudo aibot logs
 
 Название пунктов в интерфейсе ВК может отличаться.
-`,idHint,groupID)
+`,idHint,exampleID)
 }
 func setupSummary(cfg Config,c *Catalog)string{
  vk:=cfg.VKToken!=""&&cfg.GroupID>0
