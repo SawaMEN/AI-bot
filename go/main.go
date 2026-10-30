@@ -232,22 +232,96 @@ func (w Wizard) configureVKEvents(cfg Config){
  fmt.Fprintln(w.out,"✓ События включены. Проверка:",vkDiagnostics(ctx,cfg))
  fmt.Fprintln(w.out,"Далее: добавьте сообщество в беседу ВК и проверьте ответ на упоминание.")
 }
-func service(action string){cmd:=exec.Command("systemctl",action,"ai-bot");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;_ =cmd.Run()}
+func service(action string)error{
+ ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel()
+ cmd:=exec.CommandContext(ctx,"systemctl",action,"ai-bot")
+ output,err:=cmd.CombinedOutput()
+ if err!=nil{return fmt.Errorf("служба ai-bot: %w (%s)",err,strings.TrimSpace(string(output)))}
+ return nil
+}
+func applySettings(w Wizard,cfg Config,c *Catalog){
+ if err:=saveConfig(cfg);err!=nil{
+  fmt.Fprintln(w.out,"✗ Не удалось сохранить настройки:",err)
+  return
+ }
+ fmt.Fprintln(w.out,"✓ Настройки сохранены.")
+ if cfg.VKToken==""||cfg.GroupID<1{
+  fmt.Fprintln(w.out,"Бот ещё не запущен: сначала заполните токен и ID сообщества ВК (пункт 1).")
+  return
+ }
+ connected:=false
+ for id,p:=range cfg.Providers{
+  spec,ok:=c.Specs[id]
+  if ok&&p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){connected=true;break}
+ }
+ if !connected{
+  fmt.Fprintln(w.out,"Бот ещё не запущен: сначала подключите хотя бы один бесплатный ИИ (пункт 2).")
+  return
+ }
+ if err:=service("restart");err!=nil{
+  fmt.Fprintln(w.out,"✗ Не удалось перезапустить бота:",err)
+  fmt.Fprintln(w.out,"Посмотрите подробности: sudo aibot logs")
+ }else{fmt.Fprintln(w.out,"✓ Служба бота перезапущена с новыми настройками.")}
+}
 func menu(w Wizard,cfg Config,c *Catalog){
- for {
-  fmt.Fprintln(w.out,"\n===== AI-bot — Go =====\n1. Настроить ВК\n2. Бесплатные провайдеры и модели\n3. Контекст/поиск/лимиты\n4. Диагностика\n5. Перезапустить\n6. Журнал\n7. Очистить историю\n8. Панель: домен/сертификат или только терминал\n9. Включить события ВК (с подтверждением)\n0. Выход")
-  choice:=w.integer("Пункт",0,0,9)
-  if choice==0{return}
+ for{
+  fmt.Fprintln(w.out,"\n════════════════ AI-bot · УПРАВЛЕНИЕ ════════════════")
+  fmt.Fprintln(w.out,"Текущая настройка:")
+  fmt.Fprint(w.out,setupSummary(cfg,c))
+  fmt.Fprintf(w.out,"  %s  Поиск в интернете\n",switchLabel(cfg.SearchEnabled))
+  fmt.Fprintf(w.out,"  %s  Резервный бесплатный ИИ\n",switchLabel(cfg.FreeFallback))
+  fmt.Fprintln(w.out,"\nЧто хотите сделать?")
+  fmt.Fprintln(w.out,"  1. Подключить ВК: страница сообщества, токен и ID")
+  fmt.Fprintln(w.out,"  2. Подключить бесплатный ИИ / выбрать модель")
+  fmt.Fprintln(w.out,"  3. Контекст сообщений, поиск, лимиты и приватность")
+  fmt.Fprintln(w.out,"  4. Проверить, всё ли работает (диагностика)")
+  fmt.Fprintln(w.out,"  5. Перезапустить бота")
+  fmt.Fprintln(w.out,"  6. Посмотреть ошибки и события (журнал)")
+  fmt.Fprintln(w.out,"  7. Удалить сохранённую переписку и очередь")
+  fmt.Fprintln(w.out,"  8. Веб-панель по домену / управление без браузера")
+  fmt.Fprintln(w.out,"  9. Включить получение сообщений и кнопок ВК")
+  fmt.Fprintln(w.out," 10. Инструкция: где найти ID и токен ВК")
+  fmt.Fprintln(w.out," 11. Что делать дальше?")
+  fmt.Fprintln(w.out,"  0. Выход")
+  fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,c))
+  choice:=w.integer("Введите номер пункта",0,0,11)
   switch choice{
-  case 1:w.setupVK(&cfg);_ =saveConfig(cfg);service("restart")
-  case 2:w.setupModels(&cfg,c);service("restart")
-  case 3:w.behavior(&cfg);_ =saveConfig(cfg);service("restart")
-  case 4:fmt.Fprintln(w.out,doctor(context.Background(),cfg))
-  case 5:service("restart")
-  case 6:cmd:=exec.Command("journalctl","-u","ai-bot","-n","60","--no-pager");cmd.Stdout=w.out;_ =cmd.Run()
-  case 7:if w.ask("Для удаления истории напишите ДА","нет")=="ДА"{s,err:=openStore(dataPath());if err!=nil{fmt.Fprintln(w.out,err)}else{if err=s.clearMessages();err!=nil{fmt.Fprintln(w.out,"Ошибка очистки:",err)};s.close()}}
+  case 0:return
+  case 1:w.setupVK(&cfg);applySettings(w,cfg,c)
+  case 2:w.setupModels(&cfg,c);applySettings(w,cfg,c)
+  case 3:w.behavior(&cfg);applySettings(w,cfg,c)
+  case 4:
+   fmt.Fprintln(w.out,"\n════════ ПРОВЕРКА ПОДКЛЮЧЕНИЙ ════════")
+   fmt.Fprintln(w.out,doctor(context.Background(),cfg))
+   fmt.Fprintln(w.out,"Если обнаружены проблемы, исправьте их в пунктах 1, 2 или 9.")
+   fmt.Fprintln(w.out,"Для проверки ответа добавьте сообщество в беседу и задайте ему вопрос.")
+  case 5:
+   if err:=service("restart");err!=nil{fmt.Fprintln(w.out,"✗ Перезапуск не удался:",err)
+   }else{fmt.Fprintln(w.out,"✓ Команда перезапуска отправлена. Статус: sudo systemctl status ai-bot")}
+  case 6:
+   fmt.Fprintln(w.out,"\nПоследние 60 строк журнала службы:")
+   cmd:=exec.Command("journalctl","-u","ai-bot","-n","60","--no-pager")
+   cmd.Stdout=w.out;cmd.Stderr=w.out
+   if err:=cmd.Run();err!=nil{fmt.Fprintln(w.out,"Не удалось открыть журнал:",err)}
+  case 7:
+   fmt.Fprintln(w.out,"Удалятся сохранённая переписка и ожидающие запросы. Это действие нельзя отменить.")
+   if w.ask("Введите ДА, чтобы удалить","нет")=="ДА"{
+    store,err:=openStore(dataPath())
+    if err!=nil{fmt.Fprintln(w.out,"✗ SQLite:",err)
+    }else{
+     if err=store.clearMessages();err!=nil{fmt.Fprintln(w.out,"✗ Ошибка удаления:",err)
+     }else{fmt.Fprintln(w.out,"✓ История и очередь сообщений удалены.")}
+     store.close()
+    }
+   }else{fmt.Fprintln(w.out,"Отменено.")}
   case 8:w.panelMenu()
   case 9:w.configureVKEvents(cfg)
+  case 10:fmt.Fprintln(w.out,vkSetupGuide(cfg.GroupID))
+  case 11:
+   fmt.Fprintln(w.out,"\n════════ ЧТО ДЕЛАТЬ ДАЛЬШЕ ════════")
+   fmt.Fprint(w.out,setupSummary(cfg,c))
+   fmt.Fprintln(w.out,nextSetupStep(cfg,c))
+   fmt.Fprintln(w.out,"Полная инструкция: sudo aibot guide")
   }
  }
 }
@@ -269,23 +343,30 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.4.0")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.0")
  case "setup":
-  w.setupVK(&cfg);w.setupModels(&cfg,catalog);w.behavior(&cfg)
-  if err=saveConfig(cfg);err!=nil{return err};fmt.Fprintln(os.Stdout,"Настройки сохранены. Проверка: sudo aibot doctor")
-  service("restart")
+  fmt.Fprintln(w.out,"=== ПЕРВАЯ НАСТРОЙКА AI-bot ===")
+  fmt.Fprintln(w.out,"Нужно сделать всего две вещи: (1) подключить сообщество ВК, (2) выбрать бесплатный ИИ.")
+  w.setupVK(&cfg)
+  w.setupModels(&cfg,catalog)
+  if w.yes("Открыть дополнительные настройки (необязательно)",false){w.behavior(&cfg)}
+  applySettings(w,cfg,catalog)
+  fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,catalog))
+  fmt.Fprintln(w.out,"Для подробной инструкции: sudo aibot guide")
  case "menu":menu(w,cfg,catalog)
+ case "guide":fmt.Fprintln(w.out,vkSetupGuide(cfg.GroupID))
+ case "next":fmt.Fprint(w.out,setupSummary(cfg,catalog));fmt.Fprintln(w.out,nextSetupStep(cfg,catalog))
  case "doctor","status":fmt.Println(doctor(context.Background(),cfg))
  case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
  case "panel":return panelCommand(w,os.Args[2:])
  case "logs":cmd:=exec.Command("journalctl","-u","ai-bot","-n","70","--no-pager");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;return cmd.Run()
- case "restart":service("restart")
- case "vk":w.setupVK(&cfg);return saveConfig(cfg)
+ case "restart":return service("restart")
+ case "vk":w.setupVK(&cfg);applySettings(w,cfg,catalog)
  case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
- case "behavior":w.behavior(&cfg);return saveConfig(cfg)
+ case "behavior":w.behavior(&cfg);applySettings(w,cfg,catalog)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
- default:return errors.New("команды: run, setup, menu, doctor, web, logs, restart, status, vk, vk-events, api, behavior, clear, version, panel setup ДОМЕН, panel status, panel off, panel reset")
+ default:return errors.New("команды: menu, setup, guide, next, doctor, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
  }
  return nil
 }
