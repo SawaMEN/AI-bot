@@ -333,7 +333,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
    fmt.Fprintln(w.out,nextSetupStep(cfg,c))
    fmt.Fprintln(w.out,"Полная инструкция: sudo aibot guide")
   case 12:
-   ctx,cancel:=context.WithTimeout(context.Background(),5*time.Minute)
+   ctx,cancel:=context.WithTimeout(context.Background(),10*time.Minute)
    if err:=checkAIConnectivity(ctx,cfg,c,w.out,false);err!=nil{fmt.Fprintln(w.out,"✗ Проверка ИИ:",err)}
    cancel()
   }
@@ -378,7 +378,7 @@ func run()error{
  case "check-ai":
   networkOnly:=len(os.Args)==3&&os.Args[2]=="network"
   if len(os.Args)>3||len(os.Args)==3&&!networkOnly{return errors.New("использование: sudo aibot check-ai [network]")}
-  ctx,cancel:=context.WithTimeout(context.Background(),5*time.Minute)
+  ctx,cancel:=context.WithTimeout(context.Background(),10*time.Minute)
   defer cancel()
   return checkAIConnectivity(ctx,cfg,catalog,os.Stdout,networkOnly)
  case "vk-events":w.configureVKEvents(cfg)
