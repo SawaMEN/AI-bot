@@ -16,6 +16,7 @@ func TestVKGuidedBoardsStayInsideLimits(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
  for name,raw:=range map[string]string{
   "главная":mainBoard(),
+  "под ответом":answerBoard(),
   "личные":personalBoard(),
   "беседа":chatBoard(),
   "помощь":helpBoard(),
