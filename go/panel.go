@@ -275,6 +275,7 @@ func (w Wizard) panelMenu(){
     }else{fmt.Fprintln(w.out,"✓ Сброшено. Чтобы настроить новый домен, выберите пункт 1.")}
    }
   }
+  w.pauseMenu()
  }
 }
 func panelCommand(w Wizard,args []string)error{
