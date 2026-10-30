@@ -246,7 +246,8 @@ func applySettings(w Wizard,cfg Config,c *Catalog){
  }
  fmt.Fprintln(w.out,"✓ Настройки сохранены.")
  if cfg.VKToken==""||cfg.GroupID<1{
-  fmt.Fprintln(w.out,"Бот ещё не запущен: сначала заполните токен и ID сообщества ВК (пункт 1).")
+  if err:=service("stop");err!=nil{fmt.Fprintln(w.out,"Внимание: не удалось остановить прежнюю службу:",err)}
+  fmt.Fprintln(w.out,"Бот остановлен до настройки ВК. Далее: пункт 1 — токен и ID сообщества.")
   return
  }
  connected:=false
@@ -255,7 +256,8 @@ func applySettings(w Wizard,cfg Config,c *Catalog){
   if ok&&p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){connected=true;break}
  }
  if !connected{
-  fmt.Fprintln(w.out,"Бот ещё не запущен: сначала подключите хотя бы один бесплатный ИИ (пункт 2).")
+  if err:=service("stop");err!=nil{fmt.Fprintln(w.out,"Внимание: не удалось остановить прежнюю службу:",err)}
+  fmt.Fprintln(w.out,"Бот остановлен до подключения ИИ. Далее: пункт 2 — включите бесплатный сервис.")
   return
  }
  if err:=service("restart");err!=nil{
@@ -363,7 +365,7 @@ func run()error{
  case "logs":cmd:=exec.Command("journalctl","-u","ai-bot","-n","70","--no-pager");cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr;return cmd.Run()
  case "restart":return service("restart")
  case "vk":w.setupVK(&cfg);applySettings(w,cfg,catalog)
- case "api":w.setupModels(&cfg,catalog);return saveConfig(cfg)
+ case "api":w.setupModels(&cfg,catalog);applySettings(w,cfg,catalog)
  case "behavior":w.behavior(&cfg);applySettings(w,cfg,catalog)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
  default:return errors.New("команды: menu, setup, guide, next, doctor, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
