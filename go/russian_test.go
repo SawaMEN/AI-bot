@@ -33,7 +33,7 @@ func TestRussianExclusionsSurviveAutoModeAndPreference(t *testing.T){
  c,err:=newCatalog();if err!=nil{t.Fatal(err)}
  list:=c.enabled(cfg)
  for _,key:=range list{if key==cfg.RussianBlockedModels[0]{t.Fatal("blocked language model re-enabled automatically")}}
- if c.defaultModel(cfg)!="zai:glm-4.7-flash"{t.Fatalf("default did not migrate: %s",c.defaultModel(cfg))}
+ if c.defaultModel(cfg)!="groq:openai/gpt-oss-120b"{t.Fatalf("default did not migrate: %s",c.defaultModel(cfg))}
 }
 
 func TestEnglishOnlyModelFallsBackToRussianAndQuarantines(t *testing.T){
