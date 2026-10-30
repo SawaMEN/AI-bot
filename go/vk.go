@@ -185,6 +185,11 @@ func board(rows [][]Btn)string{
   line:=[]struct{Label,Command string}{};for _,b:=range row{line=append(line,struct{Label,Command string}{b.Label,b.Command})};typed=append(typed,line)
  };return keyboard(typed)
 }
+// A single unobtrusive menu entry is attached to normal AI answers, so
+// users do not need to remember commands or scroll up to old keyboards.
+func answerBoard()string{
+ return board([][]Btn{{{"⚙ Открыть меню","меню"}}})
+}
 // One entry point in VK, then concise context-sensitive screens.
 // Buttons are stateless callback commands, so the menus survive bot restarts.
 func mainBoard()string{
