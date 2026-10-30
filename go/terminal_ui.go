@@ -103,19 +103,6 @@ func keyReady(reader *bufio.Reader,timeoutMs int)bool{
  n,err:=syscall.Select(fd+1,&readSet,nil,nil,&timeout)
  return err==nil&&n>0
 }
-func chooseFromKey(reader *bufio.Reader,keys []byte,selected int,opts []menuOption)(int,bool){
- if len(keys)==0||len(opts)==0{return selected,false}
- switch string(keys) {
- case "up","k":
-  return (selected+len(opts)-1)%len(opts),false
- case "down","j":
-  return (selected+1)%len(opts),false
- case "home":return 0,false
- case "end":return len(opts)-1,false
- case "enter":return selected,true
- }
- return selected,false
-}
 func (w Wizard) chooseMenu(title,subtitle string,options []menuOption)int{
  if len(options)==0{return 0}
  if !terminalEnabled(w.out)||!canReadTTY(w.in){
@@ -305,5 +292,5 @@ func consoleSpinner(out io.Writer,label string,task func()) {
  task()
  close(done)
  <-stopped
- fmt.Fprintf(out,"\r\x1b[2K%s %s\n",tone("✓",tuiGreen),cleanTerminal(label))
+ fmt.Fprintf(out,"\r\x1b[2K%s %s\n",tone("•",tuiMuted),cleanTerminal(label))
 }
