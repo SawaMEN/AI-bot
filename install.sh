@@ -10,19 +10,21 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.4.0"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.5.0"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
-echo "Загрузка готового бинарного AI-bot Go для $ARCH..."
+echo "══════ УСТАНОВКА AI-bot ═════="
+echo "Шаг 1/3. Скачиваем готовую программу для Linux $ARCH..."
 curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/ai-bot-linux-$ARCH" "$RELEASE/ai-bot-linux-$ARCH" ||
  { echo "Go-релиз ещё не опубликован. Старая версия не изменена."; exit 1; }
 curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE/sha256sums.txt" ||
  { echo "Не удалось загрузить контрольные суммы. Старая версия не изменена."; exit 1; }
 (cd "$STAGING" && grep " ai-bot-linux-$ARCH$" sha256sums.txt | sha256sum -c -) ||
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
+echo "✓ Файлы скачаны, контрольная сумма проверена."
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.4.0" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.5.0" || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 
@@ -45,7 +47,7 @@ if [[ -f /usr/local/lib/ai-bot/ai-bot ]]; then
   cp -a /usr/local/lib/ai-bot/ai-bot "$STAGING/ai-bot.binary.old"
 fi
 
-echo "Установка Go-версии с сохранением базы, API-ключей и настроек..."
+echo "Шаг 2/3. Обновляем программу. История, API-ключи и настройки останутся на месте..."
 # The optional domain panel executes the same Go binary; stop it before
 # replacing the executable, without stopping the TLS proxy or the VPN.
 PANEL_WAS_ACTIVE=false
@@ -93,11 +95,14 @@ SERVICE
 systemctl daemon-reload
 systemctl enable ai-bot.service >/dev/null
 if ! /usr/local/bin/aibot is-configured; then
-  echo "Первоначальная настройка..."
+  echo "Шаг 3/3. Это первый запуск: подключим страницу сообщества ВК и бесплатный ИИ."
+  echo "Инструкция по ВК откроется в мастере. Не отправляйте токен в чат."
   if [[ -r /dev/tty ]] && (: </dev/tty) 2>/dev/null; then
     /usr/local/bin/aibot setup </dev/tty
   else
-    echo "Терминал недоступен. Позже выполните sudo aibot setup"
+    echo "Терминал сейчас недоступен: это не ошибка скачивания."
+    echo "Подключитесь к серверу через SSH и выполните: sudo aibot setup"
+    echo "Для подсказок об ID и токене сообщества: sudo aibot guide"
   fi
 fi
 if /usr/local/bin/aibot is-configured; then
@@ -130,7 +135,14 @@ if /usr/local/bin/aibot is-configured; then
       echo "HTTPS-панель не запустилась. Проверьте journalctl -u ai-bot-panel-tls"
     fi
   fi
-  echo "AI-bot Go установлен. Меню: sudo aibot menu. Диагностика: sudo aibot doctor"
+  echo "✓ AI-bot Go установлен и служба запущена."
+  echo "────────────────────────────────"
+  echo "Что делать дальше:"
+  echo "  sudo aibot menu     — удобное меню с состояниями ВКЛ/ВЫКЛ"
+  echo "  sudo aibot next     — следующий шаг настройки"
+  echo "  sudo aibot guide    — где найти ID и токен сообщества ВК"
+  echo "  sudo aibot doctor   — проверить подключения"
+  echo "Для проверки в чате добавьте сообщество ВК в беседу и упомяните его."
 else
   systemctl stop ai-bot.service 2>/dev/null || true
   if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
@@ -139,5 +151,7 @@ else
   if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
     systemctl restart ai-bot-panel-tls.service || true
   fi
-  echo "Бинарник установлен, но ключи не настроены. sudo aibot setup"
+  echo "✓ Программа установлена, но бот пока не настроен — запуск отложен."
+  echo "Далее: подключитесь к VDS через SSH и выполните sudo aibot setup"
+  echo "Подробная инструкция по ВК: sudo aibot guide"
 fi
