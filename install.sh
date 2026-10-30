@@ -5,6 +5,10 @@ if [[ $(id -u) != 0 ]]; then echo "Запустите через sudo"; exit 1; 
 command -v systemctl >/dev/null || { echo "Нужен systemd"; exit 1; }
 command -v curl >/dev/null || { echo "Установите curl"; exit 1; }
 command -v sha256sum >/dev/null || { echo "Не найден sha256sum"; exit 1; }
+command -v flock >/dev/null || { echo "Не найден flock"; exit 1; }
+# Avoid racing with the hourly updater while replacing the running binary.
+exec 9>/run/lock/ai-bot-update.lock
+flock 9
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64 ;;
   aarch64|arm64) ARCH=arm64 ;;
