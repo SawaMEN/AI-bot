@@ -36,7 +36,7 @@ func terminalEnabled(out io.Writer) bool {
  if err!=nil||in.Mode()&os.ModeCharDevice==0{return false}
  info,err:=f.Stat()
  if err!=nil||info.Mode()&os.ModeCharDevice==0{return false}
- _,err=termGet(syscall.Stdin)
+ _,err=termGet(int(os.Stdin.Fd()))
  return err==nil
 }
 func termGet(fd int)(syscall.Termios,error){
@@ -51,17 +51,17 @@ func termSet(fd int,t *syscall.Termios)error{
  return nil
 }
 func rawTerm() (func(),error){
- original,err:=termGet(syscall.Stdin)
+ original,err:=termGet(int(os.Stdin.Fd()))
  if err!=nil{return nil,err}
  raw:=original
  raw.Lflag &^= syscall.ICANON|syscall.ECHO
  raw.Iflag &^= syscall.IXON|syscall.ICRNL
- if err=termSet(syscall.Stdin,&raw);err!=nil{return nil,err}
- return func(){_ =termSet(syscall.Stdin,&original)},nil
+ if err=termSet(int(os.Stdin.Fd()),&raw);err!=nil{return nil,err}
+ return func(){_ =termSet(int(os.Stdin.Fd()),&original)},nil
 }
 func terminalDimensions()(int,int){
  size:=screenSize{}
- _,_,errno:=syscall.Syscall(syscall.SYS_IOCTL,uintptr(syscall.Stdout),uintptr(syscall.TIOCGWINSZ),uintptr(unsafe.Pointer(&size)))
+ _,_,errno:=syscall.Syscall(syscall.SYS_IOCTL,uintptr(int(os.Stdout.Fd())),uintptr(syscall.TIOCGWINSZ),uintptr(unsafe.Pointer(&size)))
  if errno!=0||size.Cols<20||size.Rows<10{return 80,24}
  return int(size.Cols),int(size.Rows)
 }
@@ -95,7 +95,7 @@ func canReadTTY(reader *bufio.Reader)bool{
 }
 func keyReady(reader *bufio.Reader,timeoutMs int)bool{
  if reader.Buffered()>0{return true}
- fd:=syscall.Stdin
+ fd:=int(os.Stdin.Fd())
  if fd<0||fd>=1024{return false}
  var readSet syscall.FdSet
  readSet.Bits[fd/64]|=1<<uint(fd%64)
@@ -288,7 +288,9 @@ func consoleProgress(out io.Writer,done,total int,label string){
 func consoleSpinner(out io.Writer,label string,task func()) {
  if !terminalEnabled(out){fmt.Fprintln(out,cleanTerminal(label)+"...");task();return}
  done:=make(chan struct{})
+ stopped:=make(chan struct{})
  go func(){
+  defer close(stopped)
   glyphs:=[]string{"◐","◓","◑","◒"}
   ticker:=time.NewTicker(125*time.Millisecond);defer ticker.Stop()
   i:=0
@@ -302,5 +304,6 @@ func consoleSpinner(out io.Writer,label string,task func()) {
  }()
  task()
  close(done)
+ <-stopped
  fmt.Fprintf(out,"\r\x1b[2K%s %s\n",tone("✓",tuiGreen),cleanTerminal(label))
 }
