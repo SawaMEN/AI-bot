@@ -188,31 +188,61 @@ func runBot(ctx context.Context,cfg Config)error{
  if errors.Is(err,context.Canceled){return nil};return err
 }
 func vkDiagnostics(ctx context.Context,cfg Config)string{
- if cfg.VKToken==""||cfg.GroupID<=0{return "VK: укажите токен и ID сообщества"}
+ if cfg.VKToken==""||cfg.GroupID<=0{
+  return "✗ ВК не настроен: нужны токен и числовой ID сообщества (пункт 1, инструкция — пункт 10)."
+ }
  v:=newVK(cfg)
  raw,err:=v.call(ctx,"groups.getLongPollSettings",url.Values{"group_id":{fmt.Sprint(cfg.GroupID)}})
- if err!=nil{return "VK API: "+err.Error()}
+ if err!=nil{
+  return "✗ Проверка ВК не прошла: "+err.Error()+
+   "\nПроверьте токен (пункт 1) и его разрешение на сообщения. Где получить ключ: сообщество → Управление → Работа с API → Ключи доступа."
+ }
  var result struct{
   Enabled json.RawMessage `json:"is_enabled"`
   Alternative json.RawMessage `json:"enabled"`
   Events map[string]json.RawMessage `json:"events"`
  }
- if err:=json.Unmarshal(raw,&result);err!=nil{return "Не удалось прочитать настройки Long Poll ВК"}
+ if err:=json.Unmarshal(raw,&result);err!=nil{return "✗ Не удалось прочитать настройки Long Poll ВК"}
  enabled:=vkEnabled(result.Enabled)||vkEnabled(result.Alternative)
  messageNew:=vkEnabled(result.Events["message_new"])
  messageEvent:=vkEnabled(result.Events["message_event"])
- return fmt.Sprintf("Long Poll: %t; message_new: %t; message_event: %t. Доступ ко всей переписке назначается администратором каждой беседы.",
- enabled,messageNew,messageEvent)
+ status:=fmt.Sprintf("%s  Подключение Long Poll ВК\n%s  Получение новых сообщений (message_new)\n%s  Нажатия кнопок (message_event)",
+  switchLabel(enabled),switchLabel(messageNew),switchLabel(messageEvent))
+ if !enabled||!messageNew||!messageEvent{
+  status+="\nДалее: включите события в пункте 9 или в ВК: «Управление» → «Работа с API» → «Long Poll API»."
+ }else{
+  status+="\n✓ ВК разрешил события. Проверьте, добавлено ли сообщество в нужную беседу и есть ли у него доступ к сообщениям."
+ }
+ return status
 }
 func doctor(ctx context.Context,cfg Config)string{
- c,err:=newCatalog();if err!=nil{return err.Error()}
- errorsBy:=c.refresh(ctx,cfg);list:=c.enabled(cfg)
- report:=fmt.Sprintf("Бесплатных моделей разрешено: %d\n",len(list))
- if len(errorsBy)>0{report+=fmt.Sprintf("Проблемы каталога: %v\n",errorsBy)}
- store,err:=openStore(dataPath());if err!=nil{report+="SQLite: "+err.Error()+"\n"}else{
-  var integrity string;_ =store.DB.QueryRow("PRAGMA quick_check").Scan(&integrity)
-  report+="SQLite: "+integrity+"\n";store.close()
+ c,err:=newCatalog();if err!=nil{return "✗ Не удалось открыть каталог ИИ: "+err.Error()}
+ problems:=c.refresh(ctx,cfg)
+ allowed:=c.enabled(cfg)
+ var report strings.Builder
+ report.WriteString("════════ ДИАГНОСТИКА AI-bot ════════\n")
+ fmt.Fprintf(&report,"%s  Доступные бесплатные модели: %d\n",readyLabel(len(allowed)>0),len(allowed))
+ if len(problems)>0{
+  fmt.Fprintf(&report,"✗ Некоторые каталоги ИИ не ответили: %v\n",problems)
+  report.WriteString("Подсказка: проверьте интернет на сервере и попробуйте пункт 2 → «Проверить модели».\n")
  }
- report+=vkDiagnostics(ctx,cfg)
- return report
+ store,err:=openStore(dataPath())
+ if err!=nil{
+  fmt.Fprintf(&report,"✗ База сообщений SQLite: %v\n",err)
+  report.WriteString("Подсказка: проверьте свободное место на диске и права /var/lib/ai-bot.\n")
+ }else{
+  var integrity string
+  if checkErr:=store.DB.QueryRow("PRAGMA quick_check").Scan(&integrity);checkErr!=nil{
+   fmt.Fprintf(&report,"✗ База сообщений SQLite: %v\n",checkErr)
+  }else{
+   fmt.Fprintf(&report,"%s  База сообщений SQLite: %s\n",readyLabel(integrity=="ok"),integrity)
+  }
+  store.close()
+ }
+ report.WriteString("\n")
+ report.WriteString(vkDiagnostics(ctx,cfg))
+ report.WriteString("\n\n")
+ report.WriteString(nextSetupStep(cfg,c))
+ report.WriteString("\nЕсли бот не отвечает на упоминание: sudo aibot logs\n")
+ return report.String()
 }
