@@ -12,6 +12,7 @@ import (
  "path/filepath"
  "strings"
  "sync"
+ "unicode"
  "syscall"
  "time"
 )
@@ -150,23 +151,30 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
   }
   checked++
   var response string;var err error
-  // One small probe per model. A second request is only used if the provider
-  // answered successfully but did not demonstrate Russian understanding.
-  for attempt:=0;attempt<2;attempt++{
+  englishOnly:=0
+  prompts:=[]string{
+   "Напиши по-русски одним предложением, какой город является столицей России.",
+   "Как на русском называется столица Российской Федерации? Ответь только по-русски.",
+  }
+  // A second independent Russian prompt is used only when the first did not
+  // prove comprehension. Two successful English answers exclude the model.
+  for _,prompt:=range prompts{
    requestCtx,stop:=context.WithTimeout(ctx,30*time.Second)
    response,err=generate(requestCtx,cfg,key,[]Message{
-    {Role:"system",Content:"Проверка доступности и русского языка. Ответь одним коротким предложением только на русском языке."},
-    {Role:"user",Content:"Назови столицу России."},
+    {Role:"system",Content:"Проверка русского языка. Отвечай исключительно по-русски."},
+    {Role:"user",Content:prompt},
    })
    stop()
+   if err==nil&&strings.IndexFunc(response,func(r rune)bool{return unicode.In(r,unicode.Cyrillic)})<0&&
+      strings.IndexFunc(response,func(r rune)bool{return unicode.IsLetter(r)})>=0{englishOnly++}
    if err!=nil||russianProbeOK(response){break}
   }
   passed:=err==nil&&russianProbeOK(response)
   reason:=""
   if !passed{
    reason="api_error"
-   if err==nil&&nonRussianProse(response){reason="russian_unsupported"}
-   if err==nil&&!nonRussianProse(response){reason="invalid_response"}
+   if err==nil&&englishOnly==2{reason="russian_unsupported"
+   }else if err==nil{reason="invalid_response"}
   }
   if recordErr:=c.health.recordReason(cfg,key,passed,reason);recordErr!=nil{
    return fmt.Errorf("не удалось сохранить результат %s: %w",c.label(key),recordErr)
