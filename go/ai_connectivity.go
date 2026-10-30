@@ -80,8 +80,11 @@ func checkAIConnectivityWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
   steps,err:=probe(nctx,endpoint);cancel()
   if steps!=""{fmt.Fprintf(out,"  %s\n",steps)}
   if err!=nil{
-   fmt.Fprintf(out,"  ✗ Сетевая ошибка: %v\n",err)
-   failed++;continue
+   fmt.Fprintf(out,"  ✗ Прямое сетевое соединение: %v\n",err)
+   // An explicit HTTPS proxy can make API requests work even if direct
+   // TCP/TLS is blocked. The full diagnostic must try the real HTTP client.
+   if networkOnly{failed++;continue}
+   fmt.Fprintln(out,"  Проверяю HTTP API через настроенный сетевой маршрут...")
   }
   if networkOnly{
    fmt.Fprintln(out,"  ✓ Сеть доступна (авторизация и генерация не проверялись)")
@@ -120,7 +123,11 @@ func checkAIConnectivityWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
    fmt.Fprintf(out,"  ✗ Ответ получен, но проверка русского языка не прошла (%s)\n",duration)
    failed++;continue
   }
-  fmt.Fprintf(out,"  ✓ API доступен, ключ принят, ответ по-русски (%s)\n",duration)
+  if err!=nil{
+   fmt.Fprintf(out,"  ✓ API доступен через настроенный HTTP-маршрут, несмотря на ошибку прямого соединения (%s)\n",duration)
+  }else{
+   fmt.Fprintf(out,"  ✓ API доступен, ключ принят, ответ по-русски (%s)\n",duration)
+  }
   healthy++
  }
  if checked==0{return errors.New("нет включённых ИИ-провайдеров: sudo aibot menu")}
