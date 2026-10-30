@@ -217,36 +217,63 @@ func panelReset()error{
 }
 func panelStatus()string{
  cfg,err:=loadPanelConfig()
- if err!=nil{return "Доменная панель не настроена. Терминальное меню: sudo aibot menu"}
+ if err!=nil{
+  return "✗ Доменная панель не настроена.\nТерминальное меню уже доступно: sudo aibot menu\nЧтобы открыть веб-панель, выберите пункт 8 → 1."
+ }
  backend,tls:=systemdActive(panelBackendService),systemdActive(panelTLSService)
- return fmt.Sprintf("Домен: https://%s\nЛокальная панель: %t\nHTTPS-прокси: %t\nСертификаты Caddy выдаёт/обновляет автоматически. Проверка: journalctl -u ai-bot-panel-tls -n 40 --no-pager",cfg.Domain,backend,tls)
+ result:=fmt.Sprintf("Адрес: https://%s\n%s  Веб-панель бота\n%s  HTTPS и сертификаты Caddy\n",
+  cfg.Domain,switchLabel(backend),switchLabel(tls))
+ if !backend||!tls{result+="Если что-то выключено, проверьте: sudo journalctl -u ai-bot-panel-tls -n 40 --no-pager\n"}
+ result+="Caddy автоматически получает и продлевает сертификат, когда DNS и порты 80/443 доступны."
+ return result
 }
 func (w Wizard) panelMenu(){
- for {
-  fmt.Fprintln(w.out,"\n=== Панель AI-bot ===\n1. Панель по домену с автоматическим HTTPS (потребуются свободные 80/443)\n2. Состояние панели\n3. Отключить доменную панель (только терминал)\n4. Локальная панель по SSH (без публичного порта)\n5. Сбросить домен и пароль (после отключения)\n0. Назад")
-  choice:=w.integer("Пункт",0,0,5)
+ for{
+  fmt.Fprintln(w.out,"\n════════ УПРАВЛЕНИЕ ПАНЕЛЬЮ ════════")
+  fmt.Fprintln(w.out,panelStatus())
+  fmt.Fprintln(w.out,"\nЧто вам удобнее?")
+  fmt.Fprintln(w.out,"  1. Включить панель на своём домене с HTTPS")
+  fmt.Fprintln(w.out,"  2. Проверить, работает ли доменная панель")
+  fmt.Fprintln(w.out,"  3. ✗ ВЫКЛ — отключить доменную панель (бот останется включён)")
+  fmt.Fprintln(w.out,"  4. Временная панель через SSH без домена")
+  fmt.Fprintln(w.out,"  5. Сбросить домен и пароль (только после отключения)")
+  fmt.Fprintln(w.out,"  0. Назад")
+  choice:=w.integer("Номер пункта",0,0,5)
   switch choice{
   case 0:return
   case 1:
-   domain:=strings.ToLower(strings.TrimSpace(w.ask("Домен (A/AAAA должен вести на этот VDS)","")))
-   fmt.Fprintln(w.out,"Нужно, чтобы 80 и 443 были доступны извне. ACME-сертификат получает и продлевает Caddy; VPN и firewall не меняются.")
-   if w.ask("Начать настройку? Введите ДА","нет")!="ДА"{continue}
+   fmt.Fprintln(w.out,"Для доменной панели нужно:")
+   fmt.Fprintln(w.out,"  1) Владеть доменом (например ai.example.com).")
+   fmt.Fprintln(w.out,"  2) У регистратора/в DNS домена добавить A-запись на IP вашего VDS.")
+   fmt.Fprintln(w.out,"  3) Освободить порты 80 и 443, если на них нет других сервисов.")
+   fmt.Fprintln(w.out,"  4) Установить Caddy: sudo apt install caddy")
+   fmt.Fprintln(w.out,"AI-bot не будет отключать VPN, изменять файрвол или занимать уже используемый порт.")
+   domain:=strings.ToLower(strings.TrimSpace(w.ask("Домен (без https://, например ai.example.com)","")))
+   if w.ask("Начать установку? Напишите ДА","нет")!="ДА"{fmt.Fprintln(w.out,"Отменено.");continue}
    pass,err:=panelSetupDomain(domain)
-   if err!=nil{fmt.Fprintln(w.out,"Не настроено:",err);continue}
-   fmt.Fprintf(w.out,"Адрес: https://%s\nЛогин: admin\nПароль (сохраните сейчас, повторно не показывается): %s\n",domain,pass)
-   fmt.Fprintln(w.out,"HTTPS может стать доступен после выдачи сертификата. Проверьте DNS и журналы.")
+   if err!=nil{
+    fmt.Fprintln(w.out,"✗ Доменная панель не настроена:",err)
+    fmt.Fprintln(w.out,"Можно использовать только терминал: sudo aibot menu")
+    continue
+   }
+   fmt.Fprintf(w.out,"\n✓ Панель запущена.\nАдрес: https://%s\nЛогин: admin\nПароль (запишите сейчас): %s\n",domain,pass)
+   fmt.Fprintln(w.out,"Далее: откройте адрес в браузере. Если сертификат пока не выдан, проверьте DNS, 80/443 и журнал Caddy.")
   case 2:fmt.Fprintln(w.out,panelStatus())
   case 3:
-   if w.ask("Отключить доменную панель? Напишите ДА","нет")=="ДА"{
-    if err:=panelOff();err!=nil{fmt.Fprintln(w.out,"Ошибка:",err)}else{fmt.Fprintln(w.out,"Веб-панель выключена. AI-bot продолжает работать.")}
+   if w.ask("Для отключения веб-панели напишите ДА","нет")=="ДА"{
+    if err:=panelOff();err!=nil{fmt.Fprintln(w.out,"✗ Не удалось отключить:",err)
+    }else{fmt.Fprintln(w.out,"✓ Доменная веб-панель выключена. Сам AI-bot продолжает отвечать в ВК.")}
    }
   case 4:
-   cfg,err:=loadConfig();if err!=nil{fmt.Fprintln(w.out,err);continue}
-   catalog,err:=newCatalog();if err!=nil{fmt.Fprintln(w.out,err);continue}
-   if err:=webServe(cfg,catalog);err!=nil{fmt.Fprintln(w.out,err)}
+   fmt.Fprintln(w.out,"Откройте на своём компьютере SSH-туннель: ssh -L 8765:127.0.0.1:8765 USER@SERVER")
+   fmt.Fprintln(w.out,"Затем откройте http://127.0.0.1:8765 в браузере. Логин и временный пароль появятся ниже.")
+   cfg,err:=loadConfig();if err!=nil{fmt.Fprintln(w.out,"✗ Конфигурация:",err);continue}
+   catalog,err:=newCatalog();if err!=nil{fmt.Fprintln(w.out,"✗ Каталог моделей:",err);continue}
+   if err:=webServe(cfg,catalog);err!=nil{fmt.Fprintln(w.out,"✗ Панель:",err)}
   case 5:
-   if w.ask("Сбросить домен и пароль? Напишите ДА","нет")=="ДА"{
-    if err:=panelReset();err!=nil{fmt.Fprintln(w.out,err)}else{fmt.Fprintln(w.out,"Настройки панели удалены.")}
+   if w.ask("Для сброса домена и пароля напишите ДА","нет")=="ДА"{
+    if err:=panelReset();err!=nil{fmt.Fprintln(w.out,"✗ Сброс не выполнен:",err)
+    }else{fmt.Fprintln(w.out,"✓ Сброшено. Чтобы настроить новый домен, выберите пункт 1.")}
    }
   }
  }

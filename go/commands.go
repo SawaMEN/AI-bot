@@ -8,15 +8,34 @@ import (
 )
 
 func permissionHelp(cfg Config)string {
- return fmt.Sprintf("НАСТРОЙКА ВК:\n1. Сообщество → Управление → Сообщения → включить сообщения.\n2. Настройки для бота → возможности ботов и добавление в беседы.\n3. Работа с API → ключ сообщества с правами «Сообщения» (ввести через sudo aibot, никому не отправлять).\n4. Bots Long Poll API → включить message_new И message_event.\n5. Администратор каждой беседы выдаёт сообществу «Доступ ко всей переписке» либо права администратора.\n6. В группе упомяните [club%d|AI-bot] и спросите «А как ты думаешь?».\nБот не видит историю до вступления и то, к чему ВК не дал доступ.",cfg.GroupID)
+ return vkSetupGuide(cfg.GroupID)
 }
 func helpText()string {
- return "AI-bot — выбор через кнопки под сообщением.\n"+
- "• меню, модели, модель 2, настройки\n• поиск авто/вкл/выкл\n"+
- "• стиль кратко/обычно/подробно\n• контекст 20\n• резерв выкл/вкл/авто\n"+
- "• сброс (личные настройки)\n\nАдминистратор беседы: "+
- "диалог, диалог модель 1, диалог поиск авто, диалог стиль кратко, диалог контекст 20, диалог резерв выкл, диалог сброс.\n"+
- "Чтобы обратиться без слова «бот», упомяните сообщество ВК."
+ return "AI-bot — помощник в беседе ВКонтакте.\n"+
+ "Бот работает от имени сообщества ВК (группы/паблика), которое добавлено в вашу беседу.\n\n"+
+ "Как задать вопрос:\n"+
+ "1. Упомяните сообщество в сообщении.\n"+
+ "2. Напишите вопрос: «А как ты думаешь?»\n"+
+ "3. Дождитесь ответа. Бот учитывает доступные ему сообщения беседы.\n\n"+
+ "Команды и кнопки:\n"+
+ "• «меню» — открыть кнопки управления\n"+
+ "• «модели» — выбрать бесплатную модель\n"+
+ "• «настройки» — личные параметры\n"+
+ "• «поиск вкл/выкл/авто» — режим поиска\n"+
+ "• «стиль кратко/обычно/подробно» — длина ответа\n"+
+ "• «контекст 20» — сколько сообщений учитывать\n"+
+ "• «резерв вкл/выкл» — другой бесплатный ИИ при ошибке\n\n"+
+ "Администратор беседы может изменить общие настройки через «диалог».\n"+
+ "Если бот молчит, откройте «права»: там подробная инструкция для ВК."
+}
+func readableSearch(v string)string{
+ switch v{case "on":return "✓ ВКЛ";case "off":return "✗ ВЫКЛ";case "auto","":return "АВТО (по необходимости)";default:return v}
+}
+func readableFallback(v string)string{
+ switch v{case "on":return "✓ ВКЛ";case "off":return "✗ ВЫКЛ";default:return "По настройке сервера"}
+}
+func readableStyle(v string)string{
+ switch v{case "short":return "Кратко";case "detailed":return "Подробно";case "normal","":return "Обычно";default:return v}
 }
 func listModels(c *Catalog,cfg Config,page int,chat bool)string{
  allowed:=c.enabled(cfg);if len(allowed)==0{return "Пока нет доступных бесплатных моделей. Администратор сервера: sudo aibot"}
@@ -29,14 +48,18 @@ func listModels(c *Catalog,cfg Config,page int,chat bool)string{
 }
 func chatInfo(s *Store,c *Catalog,cfg Config,peer int64)string{
  pref:=s.getPref("chat",peer)
- label:=pref.Model;if label==""{label="основная модель сервера"}else{label=c.label(label)}
- return fmt.Sprintf("Настройки беседы:\nМодель: %s\nПоиск: %s\nСтиль: %s\nКонтекст: %d\nРезерв: %s\nИзменять может только администратор беседы.",
- label,choose(pref.Search,"авто"),choose(pref.Style,"обычно"),pref.Context,choose(pref.Fallback,"наследование"))
+ model:="основная модель сервера"
+ if pref.Model!=""{model=c.label(pref.Model)}
+ contextLabel:=fmt.Sprintf("по настройке сервера (до %d сообщений)",cfg.ContextMessages)
+ if pref.Context>0{contextLabel=fmt.Sprintf("%d сообщений",pref.Context)}
+ return fmt.Sprintf("НАСТРОЙКИ БЕСЕДЫ\nМодель: %s\nПоиск: %s\nСтиль: %s\nКонтекст: %s\nРезервный ИИ: %s\n\nИзменять общие настройки может только администратор беседы.",
+  model,readableSearch(pref.Search),readableStyle(pref.Style),contextLabel,readableFallback(pref.Fallback))
 }
 func personalInfo(s *Store,c *Catalog,cfg Config,peer,user int64)string{
- key,search,style,count,fallback:=s.effective(cfg,peer,user,c);model:="не настроена";if key!=""{model=c.label(key)}
- res:="выключен";if fallback{res="разрешён"}
- return fmt.Sprintf("Ваши настройки:\nМодель: %s\nПоиск: %s\nСтиль: %s\nКонтекст: %d сообщений\nРезерв: %s",model,search,style,count,res)
+ key,search,style,count,fallback:=s.effective(cfg,peer,user,c)
+ model:="не настроена";if key!=""{model=c.label(key)}
+ return fmt.Sprintf("ВАШИ НАСТРОЙКИ\nМодель: %s\nПоиск: %s\nСтиль: %s\nКонтекст: %d сообщений\nРезервный ИИ: %s\n\nИзменить: нажмите кнопку под сообщением или напишите «меню».",
+  model,readableSearch(search),readableStyle(style),count,switchLabel(fallback))
 }
 func cmdApply(s *Store,c *Catalog,cfg Config,scope string,ident int64,parts []string)string{
  if len(parts)==0{return "Откройте меню кнопками."}

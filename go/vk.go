@@ -136,11 +136,11 @@ func board(rows [][]Btn)string{
 }
 func mainBoard()string{
  return board([][]Btn{
-  {{"Выбрать ИИ","модели 1"},{"Мои настройки","настройки"}},
+  {{"Бесплатные ИИ","модели 1"},{"Мои настройки","настройки"}},
   {{"Поиск","выбор поиска"},{"Стиль ответа","выбор стиля"}},
-  {{"Контекст","выбор контекста"},{"Настройки беседы","диалог"}},
+  {{"Контекст беседы","выбор контекста"},{"Общие настройки","диалог"}},
   {{"Резервный ИИ","выбор резерва"},{"Помощь","помощь"}},
-  {{"Права и подключение","права"}},
+  {{"Как подключить ВК?","права"}},
  })
 }
 func chatBoard()string {
@@ -169,12 +169,12 @@ func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
 func choiceBoard(prefix,name string,cfg Config)string{
  rows:=[][]Btn{}
  switch name {
- case "поиска":rows=[][]Btn{{{"Авто",prefix+"поиск авто"},{"Искать всегда",prefix+"поиск вкл"}},{{"Без поиска",prefix+"поиск выкл"}}}
+ case "поиска":rows=[][]Btn{{{"АВТО: по необходимости",prefix+"поиск авто"},{"✓ ВКЛ: искать",prefix+"поиск вкл"}},{{"✗ ВЫКЛ: не искать",prefix+"поиск выкл"}}}
  case "стиля":rows=[][]Btn{{{"Кратко",prefix+"стиль кратко"},{"Обычно",prefix+"стиль обычно"}},{{"Подробно",prefix+"стиль подробно"}}}
  case "контекста":
   values:=[]int{5,10,20,30,50,100};used:=map[int]bool{}
   for _,n:=range values{n=min(cfg.ContextMessages,n);if n<1||used[n]{continue};used[n]=true;rows=append(rows,[]Btn{{fmt.Sprintf("%d сообщений",n),fmt.Sprintf("%sконтекст %d",prefix,n)}});if len(rows)>=5{break}}
- case "резерва":rows=[][]Btn{{{"Разрешить резерв",prefix+"резерв вкл"},{"Запретить",prefix+"резерв выкл"}},{{"По умолчанию",prefix+"резерв авто"}}}
+ case "резерва":rows=[][]Btn{{{"✓ ВКЛ: резерв",prefix+"резерв вкл"},{"✗ ВЫКЛ: резерв",prefix+"резерв выкл"}},{{"По умолчанию",prefix+"резерв авто"}}}
  }
  rows=append(rows,[]Btn{{"Меню","меню"}})
  return board(rows)

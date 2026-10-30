@@ -25,7 +25,7 @@ import (
 var adminHTML string
 type webProvider struct{ID,Name,URL string;Enabled,Auto bool}
 type webField struct{Key,Label string;Value int}
-type webData struct{CSRF,Notice string;Allowed []string;Labels map[string]string;Providers []webProvider;Fields []webField;Search,Fallback bool;Domain string}
+type webData struct{CSRF,Notice string;Allowed []string;Labels map[string]string;Providers []webProvider;Fields []webField;Search,Fallback bool;Domain string;VKReady bool;GroupID int64;NextStep string}
 func secretToken()string{
  raw:=make([]byte,24)
  if _,err:=rand.Read(raw);err!=nil{panic("не удалось сгенерировать пароль")}
@@ -112,7 +112,8 @@ func panelHTTPHandler(c *Catalog,hash,domain string)http.Handler{
   list:=c.enabled(current)
   data:=webData{CSRF:csrf,Notice:notice.Load().(string),Allowed:list,
    Labels:map[string]string{},Search:current.SearchEnabled,
-   Fallback:current.FreeFallback,Domain:domain}
+   Fallback:current.FreeFallback,Domain:domain,VKReady:current.VKToken!=""&&current.GroupID>0,
+   GroupID:current.GroupID,NextStep:nextSetupStep(current,c)}
   for _,id:=range list{data.Labels[id]=c.label(id)}
   for _,id:=range c.Order{
    p:=c.Specs[id];settings:=current.Providers[id]
