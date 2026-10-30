@@ -277,6 +277,8 @@ func doctor(ctx context.Context,cfg Config)string{
  report.WriteString(vkDiagnostics(ctx,cfg))
  report.WriteString("\n\n")
  report.WriteString(nextSetupStep(cfg,c))
- report.WriteString("\nЕсли бот не отвечает на упоминание: sudo aibot logs\n")
+ report.WriteString("\nИИ недоступен: sudo aibot check-ai (DNS/TCP/TLS и реальный ответ).\n")
+ report.WriteString("Только сеть без запросов к ИИ: sudo aibot check-ai network\n")
+ report.WriteString("Если бот не отвечает на упоминание: sudo aibot logs\n")
  return report.String()
 }
