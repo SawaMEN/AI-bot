@@ -58,14 +58,17 @@ func TestServerAINetworkOnlyDoesNotSpendQuota(t *testing.T){
  if err!=nil||apiCalled{t.Fatalf("network-only called AI provider: %v, %v",apiCalled,err)}
  if !strings.Contains(out.String(),"без запросов к ИИ"){t.Fatal(out.String())}
 }
-func TestServerAIStopsAtNetworkFailure(t *testing.T){
+func TestServerAIAttemptsHTTPViaProxyWhenDirectNetworkFails(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
  calls:=0
  var out bytes.Buffer
  err:=checkAIConnectivityWith(context.Background(),cfg,c,&out,false,
   func(context.Context,string)(string,error){return "DNS OK",errors.New("TCP: connection refused")},
-  func(context.Context,Config,string,[]Message)(string,error){calls++;return "",nil})
- if err==nil||calls!=0||!strings.Contains(out.String(),"TCP: connection refused"){t.Fatalf("expected network error, got %v and %s",err,out.String())}
+  func(context.Context,Config,string,[]Message)(string,error){calls++;return "Столица России — Москва.",nil})
+ if err!=nil||calls!=2||!strings.Contains(out.String(),"TCP: connection refused")||
+  !strings.Contains(out.String(),"несмотря на ошибку прямого соединения"){
+  t.Fatalf("proxy API not tested: %v %d %s",err,calls,out.String())
+ }
 }
 func TestServerAIReportsAuthenticationAndLanguageSeparately(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
