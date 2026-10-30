@@ -166,15 +166,21 @@ func (b *Bot) event(ctx context.Context,m VKMessage) error {
  _,err:=b.store.recordAndQueue(m,mentioned)
  return err
 }
-func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload []byte){
+func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload []byte,conversationMessageID int64){
  if peer<=0||user<=0||eventID==""{return}
  cmd:=callbackCommand(payload);if cmd==""{return}
+ // Button presses are not sent to an LLM. On success reuse the original
+ // message for navigation, preventing menu spam in group conversations.
  _=b.vk.answerButton(ctx,peer,user,eventID)
  text,ok:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,peer,user,cmd)
  if !ok{return}
- // Button presses are not sent to LLM.
- err:=b.vk.send(ctx,peer,text,buttonsFor(cmd,b.catalog,b.cfg),"callback:"+eventID)
- if err!=nil{log.Printf("VK button: %v",err)}
+ buttons:=buttonsFor(cmd,b.catalog,b.cfg)
+ if conversationMessageID>0 {
+  if err:=b.vk.editMenu(ctx,peer,conversationMessageID,text,buttons);err==nil{return}
+ }
+ if err:=b.vk.send(ctx,peer,text,buttons,"callback:"+eventID);err!=nil{
+  log.Printf("VK button: %v",err)
+ }
 }
 // Retry unavailable free catalogs after ten minutes; normally refresh every 12h.
 func catalogRetryDelay(problems map[string]string,available int)time.Duration{
@@ -235,14 +241,14 @@ func runBot(ctx context.Context,cfg Config)error{
  // Cap concurrent VK button handlers to protect the 1 GB VDS from floods.
  callbackSlots:=make(chan struct{},8)
  err=vkPoll(ctx,b.vk,store,func(m VKMessage)error{return b.event(ctx,m)},
-  func(peer,user int64,event string,payload json.RawMessage){
+  func(peer,user int64,event string,payload json.RawMessage,conversationMessageID int64){
    select{
    case callbackSlots<-struct{}{}:
     go func(){
      defer func(){<-callbackSlots}()
      callCtx,cancel:=context.WithTimeout(ctx,30*time.Second)
      defer cancel()
-     b.button(callCtx,peer,user,event,payload)
+     b.button(callCtx,peer,user,event,payload,conversationMessageID)
     }()
    default:
     log.Print("VK button queue full; participant can retry the button")
