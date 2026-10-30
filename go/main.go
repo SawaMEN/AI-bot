@@ -69,6 +69,10 @@ func removeProvider(list []string,provider string)[]string{
 func(w Wizard) provider(cfg *Config,c *Catalog,id string){
  p:=c.Specs[id]
  settings:=cfg.Providers[id]
+ oldSettings:=settings
+ oldModels:=append([]string(nil),cfg.EnabledModels...)
+ oldAuto:=append([]string(nil),cfg.AutoModelsProviders...)
+ oldDefault:=cfg.DefaultModel
  detail:=fmt.Sprintf("Сервис: %s   •   %s\nКлюч API: %s   •   %s\nБесплатные модели: %d подтверждено",p.Name,p.KeyURL,
   func()string{if settings.APIKey!=""||p.AnonymousKey!=""{return "сохранён"};return "не задан"}(),switchLabel(settings.Enabled),len(c.allowedFor(id,*cfg)))
  choice:=w.chooseMenu("НАСТРОЙКА ИИ • "+p.Name,detail,[]menuOption{
@@ -136,8 +140,12 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
     cfg.AutoModelsProviders=removeExact(cfg.AutoModelsProviders,id)
     for _,i:=range selected{cfg.EnabledModels=append(cfg.EnabledModels,list[i])}
    }else{
-    // Do not accidentally disable the provider when selection was cancelled.
-    fmt.Fprintln(w.out,"Модели вручную не выбраны. Оставлен автоматический подбор.")
+    cfg.Providers[id]=oldSettings
+    cfg.EnabledModels=oldModels
+    cfg.AutoModelsProviders=oldAuto
+    cfg.DefaultModel=oldDefault
+    fmt.Fprintln(w.out,"Выбор отменён. Прежние настройки сохранены.")
+    return
    }
   }
   fmt.Fprintln(w.out,"✓ Сервис включён. Выбранные модели можно поменять здесь в любой момент.")
@@ -183,6 +191,7 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
    if len(available)==0{
     fmt.Fprintln(w.out,"✗ Моделей пока нет. Сначала подключите один из сервисов выше и включите подбор.")
     fmt.Fprintln(w.out,"Для повторной проверки: sudo aibot check-ai")
+    w.pauseMenu()
     continue
    }
    options:=make([]menuOption,0,len(available)+1)
@@ -213,6 +222,7 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
    cancel()
   }
   if err:=saveConfig(*cfg);err!=nil{fmt.Fprintln(w.out,"✗ Не удалось сохранить настройки:",err)}
+  w.pauseMenu()
  }
 }
 func(w Wizard) behavior(cfg *Config){
@@ -292,6 +302,12 @@ func applySettings(w Wizard,cfg Config,c *Catalog){
   fmt.Fprintln(w.out,"Посмотрите подробности: sudo aibot logs")
  }else{fmt.Fprintln(w.out,"✓ Служба бота перезапущена с новыми настройками.")}
 }
+func activeBotService()string{
+ ctx,stop:=context.WithTimeout(context.Background(),2*time.Second)
+ defer stop()
+ if exec.CommandContext(ctx,"systemctl","is-active","--quiet","ai-bot").Run()==nil{return "Работает"}
+ return "Остановлен"
+}
 func menu(w Wizard,cfg Config,c *Catalog){
  for{
   connected:=0
@@ -301,8 +317,8 @@ func menu(w Wizard,cfg Config,c *Catalog){
   if cfg.VKToken!=""&&cfg.GroupID>0{serviceState=fmt.Sprintf("ID %d",cfg.GroupID)}
   modelState:="Проверка не завершена"
   if usable>0{modelState=fmt.Sprintf("%d работают",usable)}
-  description:=fmt.Sprintf("%s\nПровайдеры: %d подключено   •   Рабочие модели: %d\nПоиск: %s   •   Резерв: %s\n%s",
-   "Обзор настроек и состояния VDS",connected,usable,switchLabel(cfg.SearchEnabled),switchLabel(cfg.FreeFallback),nextSetupStep(cfg,c))
+  description:=fmt.Sprintf("%s\nСлужба AI-bot: %s   •   ВК: %s\nПровайдеры: %d подключено   •   Рабочие модели: %d\nПоиск: %s   •   Резерв: %s\n%s",
+   "Обзор настроек и состояния VDS",activeBotService(),serviceState,connected,usable,switchLabel(cfg.SearchEnabled),switchLabel(cfg.FreeFallback),nextSetupStep(cfg,c))
   options:=[]menuOption{
    {1,"ВКонтакте • подключение","Токен, ID сообщества и разрешения",serviceState},
    {2,"ИИ-модели и провайдеры","Список только проверенных моделей; выбор бесплатного API",modelState},
@@ -360,10 +376,7 @@ func menu(w Wizard,cfg Config,c *Catalog){
    if err:=checkAIConnectivity(ctx,cfg,c,w.out,false);err!=nil{fmt.Fprintln(w.out,"✗ Проверка ИИ:",err)}
    cancel()
   }
-  if terminalEnabled(w.out) {
-   fmt.Fprintln(w.out,"\nНажмите Enter, чтобы вернуться в меню...")
-   _,_ =w.in.ReadString('\n')
-  }
+  w.pauseMenu()
  }
 }
 
