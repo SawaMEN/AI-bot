@@ -36,6 +36,7 @@ func(w Wizard) integer(label string,current,minValue,maxValue int)int{
  for {value:=w.ask(label,strconv.Itoa(current));v,err:=strconv.Atoi(value);if err==nil&&v>=minValue&&v<=maxValue{return v};fmt.Fprintf(w.out,"Введите число от %d до %d.\n",minValue,maxValue)}
 }
 func(w Wizard) yes(label string,current bool)bool{
+ fmt.Fprintf(w.out,"  Сейчас: %s. Нажмите Enter, чтобы оставить как есть.\n",switchLabel(current))
  defaultVal:="н";if current{defaultVal="д"}
  val:=strings.ToLower(w.ask(label+" (д/н)",defaultVal))
  return val=="д"||val=="да"||val=="y"||val=="yes"
