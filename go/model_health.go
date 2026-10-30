@@ -122,7 +122,8 @@ func scanAvailableModels(ctx context.Context,cfg Config,c *Catalog,out io.Writer
 func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Writer,force bool,generate modelProbe)error{
  if c.health==nil{return errors.New("не включено хранилище проверки моделей")}
  refreshCtx,cancel:=context.WithTimeout(ctx,35*time.Second)
- problems:=c.refresh(refreshCtx,cfg)
+ var problems map[string]string
+ consoleSpinner(out,"Обновление каталогов бесплатных ИИ",func(){problems=c.refresh(refreshCtx,cfg)})
  cancel()
  keys:=c.candidates(cfg)
  if len(keys)==0{
@@ -132,9 +133,13 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
  fmt.Fprintf(out,"Проверка всех %d настроенных бесплатных моделей с этого сервера (реальные API-запросы)...\n",len(keys))
  checked,cached:=0,0
  failures:=map[string]int{}
- for _,key:=range keys {
+ for index,key:=range keys {
   if err:=ctx.Err();err!=nil{return err}
-  if !force&&!c.health.due(cfg,key){cached++;continue}
+  if !force&&!c.health.due(cfg,key){
+   cached++
+   consoleProgress(out,index+1,len(keys),c.label(key)+" • проверено ранее")
+   continue
+  }
   checked++
   var response string;var err error
   // One small probe per model. A second request is only used if the provider
@@ -163,6 +168,7 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
    }
    failures[category]++
   }
+  consoleProgress(out,index+1,len(keys),c.label(key))
  }
  ready:=c.enabled(cfg)
  fmt.Fprintln(out,"\nДОСТУПНЫЕ МОДЕЛИ (только прошедшие проверку):")
