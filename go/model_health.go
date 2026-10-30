@@ -12,6 +12,7 @@ import (
  "path/filepath"
  "strings"
  "sync"
+ "unicode"
  "syscall"
  "time"
 )
@@ -20,6 +21,7 @@ const (
  modelHealthyFor = 24*time.Hour
  modelRecheckAfter = 12*time.Hour
  modelFailureRetryAfter = 30*time.Minute
+ modelLanguageRetryAfter = 7*24*time.Hour
 )
 
 // This file contains only a credential fingerprint (never an API key).
@@ -28,6 +30,7 @@ type modelStatus struct {
  CheckedAt time.Time `json:"checked_at"`
  Fingerprint string `json:"fingerprint"`
  Passed bool `json:"passed"`
+ Reason string `json:"reason,omitempty"`
 }
 type ModelHealth struct {
  mu sync.RWMutex
@@ -79,12 +82,16 @@ func(h *ModelHealth) due(cfg Config,key string)bool{
  age:=time.Since(r.CheckedAt)
  if age<0{return true}
  if r.Passed{return age>=modelRecheckAfter}
+ if r.Reason=="russian_unsupported"{return age>=modelLanguageRetryAfter}
  return age>=modelFailureRetryAfter
 }
 func(h *ModelHealth) record(cfg Config,key string,passed bool)error{
+ return h.recordReason(cfg,key,passed,"")
+}
+func(h *ModelHealth) recordReason(cfg Config,key string,passed bool,reason string)error{
  h.mu.Lock();defer h.mu.Unlock()
  h.entries[key]=modelStatus{
-  CheckedAt:time.Now().UTC(),Fingerprint:modelFingerprint(cfg,key),Passed:passed,
+  CheckedAt:time.Now().UTC(),Fingerprint:modelFingerprint(cfg,key),Passed:passed,Reason:reason,
  }
  return h.saveLocked()
 }
@@ -119,6 +126,8 @@ func scanAvailableModels(ctx context.Context,cfg Config,c *Catalog,out io.Writer
  ai:=newAI(c)
  return scanAvailableModelsWith(ctx,cfg,c,out,force,ai.generate)
 }
+// All keys are checked with authenticated calls. Previously language-excluded
+// models are rechecked as candidates, never silently made selectable.
 func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Writer,force bool,generate modelProbe)error{
  if c.health==nil{return errors.New("не включено хранилище проверки моделей")}
  refreshCtx,cancel:=context.WithTimeout(ctx,35*time.Second)
@@ -142,19 +151,32 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
   }
   checked++
   var response string;var err error
-  // One small probe per model. A second request is only used if the provider
-  // answered successfully but did not demonstrate Russian understanding.
-  for attempt:=0;attempt<2;attempt++{
+  englishOnly:=0
+  prompts:=[]string{
+   "Напиши по-русски одним предложением, какой город является столицей России.",
+   "Как на русском называется столица Российской Федерации? Ответь только по-русски.",
+  }
+  // A second independent Russian prompt is used only when the first did not
+  // prove comprehension. Two successful English answers exclude the model.
+  for _,prompt:=range prompts{
    requestCtx,stop:=context.WithTimeout(ctx,30*time.Second)
    response,err=generate(requestCtx,cfg,key,[]Message{
-    {Role:"system",Content:"Проверка доступности и русского языка. Ответь одним коротким предложением только на русском языке."},
-    {Role:"user",Content:"Назови столицу России."},
+    {Role:"system",Content:"Проверка русского языка. Отвечай исключительно по-русски."},
+    {Role:"user",Content:prompt},
    })
    stop()
+   if err==nil&&strings.IndexFunc(response,func(r rune)bool{return unicode.In(r,unicode.Cyrillic)})<0&&
+      strings.IndexFunc(response,func(r rune)bool{return unicode.IsLetter(r)})>=0{englishOnly++}
    if err!=nil||russianProbeOK(response){break}
   }
   passed:=err==nil&&russianProbeOK(response)
-  if recordErr:=c.health.record(cfg,key,passed);recordErr!=nil{
+  reason:=""
+  if !passed{
+   reason="api_error"
+   if err==nil&&englishOnly==2{reason="russian_unsupported"
+   }else if err==nil{reason="invalid_response"}
+  }
+  if recordErr:=c.health.recordReason(cfg,key,passed,reason);recordErr!=nil{
    return fmt.Errorf("не удалось сохранить результат %s: %w",c.label(key),recordErr)
   }
   if !passed{
@@ -165,6 +187,8 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
     if strings.Contains(msg,"429"){category="лимит частоты (HTTP 429)"}
     if strings.Contains(msg,"401")||strings.Contains(msg,"403"){category="ключ или права доступа"}
     if strings.Contains(msg,"404")||strings.Contains(msg,"410"){category="модель удалена"}
+   }else if reason=="russian_unsupported"{
+    category="нет подтверждённой поддержки русского (исключена из выбора)"
    }
    failures[category]++
   }
@@ -182,4 +206,16 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
  for label,count:=range failures{fmt.Fprintf(out,"Скрыто из-за %s: %d\n",label,count)}
  if len(ready)==0{return errors.New("ни одна модель не прошла проверку с сервера")}
  return nil
+}
+
+// Scan only one candidate provider during onboarding: its failures must not
+// be masked by a different service that happens to be healthy.
+func scanProviderModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Writer,id string,generate modelProbe)error{
+ if _,ok:=c.Specs[id];!ok{return fmt.Errorf("неизвестный ИИ-провайдер %s",id)}
+ scoped:=cfg
+ scoped.Providers=map[string]ProviderConfig{id:cfg.Providers[id]}
+ scoped.AutoModelsProviders=[]string{id}
+ scoped.EnabledModels=nil
+ scoped.RussianBlockedModels=nil
+ return scanAvailableModelsWith(ctx,scoped,c,out,true,generate)
 }

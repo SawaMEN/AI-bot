@@ -43,12 +43,12 @@ func TestVKGuideExplainsCommunityVersusChat(t *testing.T){
 func TestMenuNavigationHasGuidesAndExit(t *testing.T){
  cfg:=defaults();cfg.SearchEnabled=false;catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
  var output bytes.Buffer
- wizard:=Wizard{in:bufio.NewReader(strings.NewReader("10\n11\n0\n")),out:&output}
+ wizard:=Wizard{in:bufio.NewReader(strings.NewReader("7\n0\n")),out:&output}
  menu(wizard,cfg,catalog)
  body:=output.String()
  for _,fragment:=range []string{
-  "ГЛАВНОЕ МЕНЮ  •  AI-bot v1.5.5","✓ ВКЛ","✗ ВЫКЛ",
-  "Инструкция по ВК","Следующий шаг",
+  "AI-BOT • УПРАВЛЕНИЕ","Автоматическая настройка",
+  "Подключения","Диагностика","Помощь",
  }{
   if !strings.Contains(body,fragment){t.Errorf("menu does not contain %q",fragment)}
  }
