@@ -72,6 +72,9 @@ func TestVKReplyPayloadRoutesWithoutSendingToAI(t *testing.T){
  button.Payload=nil
  command,handled=questionFor(cfg,button)
  if !handled||command!="модели"{t.Fatalf("label fallback => %q %v",command,handled)}
+ button.Text="Расскажи о языке Go"
+ command,handled=questionFor(cfg,button)
+ if !handled||command!="Расскажи о языке Go"{t.Fatalf("free-form private chat => %q %v",command,handled)}
 }
 
 func TestVKReplyButtonsDoNotHijackUnmentionedGroupMessages(t *testing.T){
@@ -118,7 +121,7 @@ func TestVKReplyMenuNavigationReturnsToContext(t *testing.T){
   {"настройки","🧠 Контекст"},
   {"модели","Автоматически"},
   {"выбор поиска","Искать"},
-  {"поиск выкл","⚙ Мои настройки"},
+  {"поиск выкл","🏠 Главное меню"},
  }{
   raw:=replyButtonsFor(tc.command,c,cfg)
   if !strings.Contains(raw,tc.want){t.Errorf("after %q missing %q: %s",tc.command,tc.want,raw)}
