@@ -253,6 +253,14 @@ func(w Wizard) chooseMenuPlain(title,subtitle string,options []menuOption)int{
  }
 }
 
+// Preserve command results on screen until an interactive user has read them.
+// In redirected/noninteractive usage there is no extra prompt.
+func(w Wizard) pauseMenu(){
+ if !terminalEnabled(w.out){return}
+ fmt.Fprintln(w.out,"\n"+tone("Enter — вернуться к меню",tuiMuted))
+ _,_ =w.in.ReadString('\n')
+}
+
 // Determinate progress is used only when the total number of jobs is known.
 func consoleProgress(out io.Writer,done,total int,label string){
  if total<=0{return}
