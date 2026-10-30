@@ -1,9 +1,15 @@
 package main
 
 import (
+ "context"
  "encoding/json"
- "testing"
+ "fmt"
+ "net/http"
+ "net/http/httptest"
  "net/url"
+ "sync/atomic"
+ "testing"
+ "time"
 )
 func TestMentionWithoutBotPrefix(t *testing.T){
  cfg:=defaults();cfg.GroupID=123
@@ -31,4 +37,29 @@ func TestGoAdminWebLimits(t *testing.T) {
  if err==nil{t.Fatal("unknown paid provider allowed")}
  _,err=applyWebForm(&cfg,c,url.Values{"action":{"settings"},"context_messages":{"1000"}})
  if err==nil{t.Fatal("limit bypass")}
+}
+
+func TestVKTypingActivityRefreshesAndStops(t *testing.T) {
+ var calls atomic.Int32
+ server:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  if r.URL.Path!="/method/messages.setActivity"{t.Errorf("unexpected VK method %s",r.URL.Path);return}
+  if err:=r.ParseForm();err!=nil{t.Error(err);return}
+  if r.Form.Get("peer_id")!="2000000001"||r.Form.Get("type")!="typing"{t.Errorf("bad activity: %v",r.Form)}
+  calls.Add(1)
+  fmt.Fprint(w,`{"response":1}`)
+ }))
+ defer server.Close()
+ original:=vkAPIBaseURL;vkAPIBaseURL=server.URL+"/method/"
+ defer func(){vkAPIBaseURL=original}()
+ v:=newVK(testCfg());v.client=server.Client()
+ stop:=v.startThinkingWithInterval(context.Background(),2000000001,20*time.Millisecond)
+ deadline:=time.After(time.Second)
+ for calls.Load()<2{
+  select {case <-deadline:stop();t.Fatalf("no refresh: calls=%d",calls.Load());default:time.Sleep(5*time.Millisecond)}
+ }
+ stop()
+ after:=calls.Load()
+ time.Sleep(60*time.Millisecond)
+ if calls.Load()!=after{t.Fatal("typing indicator continued after stop")}
+ stop() // idempotent, including after a successful reply.
 }

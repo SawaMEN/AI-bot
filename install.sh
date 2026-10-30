@@ -10,7 +10,7 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
-RELEASE="https://github.com/SawaMEN/AI-bot/releases/download/go-v1.5.0"
+RELEASE="https://github.com/SawaMEN/AI-bot/releases/latest/download"
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "══════ УСТАНОВКА AI-bot ═════="
@@ -21,10 +21,15 @@ curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE
  { echo "Не удалось загрузить контрольные суммы. Старая версия не изменена."; exit 1; }
 (cd "$STAGING" && grep " ai-bot-linux-$ARCH$" sha256sums.txt | sha256sum -c -) ||
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
-echo "✓ Файлы скачаны, контрольная сумма проверена."
+curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/ai-bot-update" "$RELEASE/ai-bot-update" ||
+ { echo "Не удалось загрузить автообновление. Старая версия не изменена."; exit 1; }
+(cd "$STAGING" && grep " ai-bot-update$" sha256sums.txt | sha256sum -c -) ||
+ { echo "Контрольная сумма автообновления неверна!"; exit 1; }
+bash -n "$STAGING/ai-bot-update" || { echo "Ошибка скрипта автообновления"; exit 1; }
+echo "✓ Файлы скачаны, контрольные суммы проверены."
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.5.0" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.5.1" || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 
@@ -155,3 +160,42 @@ else
   echo "Далее: подключитесь к VDS через SSH и выполните sudo aibot setup"
   echo "Подробная инструкция по ВК: sudo aibot guide"
 fi
+
+# Enable verified hourly updates only after a successful installation.
+install -m 0755 -o root -g root "$STAGING/ai-bot-update" /usr/local/lib/ai-bot/ai-bot-update
+cat >/etc/systemd/system/ai-bot-update.service <<'UPDATE_SERVICE'
+[Unit]
+Description=AI-bot verified automatic update
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ai-bot/ai-bot-update
+TimeoutStartSec=5min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/usr/local/lib/ai-bot /run/lock
+UPDATE_SERVICE
+cat >/etc/systemd/system/ai-bot-update.timer <<'UPDATE_TIMER'
+[Unit]
+Description=Check AI-bot release updates hourly
+
+[Timer]
+OnBootSec=10min
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Persistent=true
+Unit=ai-bot-update.service
+
+[Install]
+WantedBy=timers.target
+UPDATE_TIMER
+systemctl daemon-reload
+systemctl enable --now ai-bot-update.timer
+echo "✓ Автообновление включено: проверка примерно раз в час."
+echo "  Проверка: systemctl list-timers ai-bot-update.timer"
