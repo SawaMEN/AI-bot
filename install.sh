@@ -33,7 +33,177 @@ bash -n "$STAGING/ai-bot-update" || { echo "Ошибка скрипта авто
 echo "✓ Файлы скачаны, контрольные суммы проверены."
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.5.1" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Eq '^AI-bot Go v[0-9]+\\.[0-9]+\\.[0-9]+ || {
+  echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
+}
+
+if ! id aibot >/dev/null 2>&1; then
+  useradd --system --user-group --home-dir /var/lib/ai-bot --shell /usr/sbin/nologin aibot
+fi
+install -d -m 2750 -o root -g aibot /etc/ai-bot
+install -d -m 0700 -o aibot -g aibot /var/lib/ai-bot
+install -d -m 0755 /usr/local/lib/ai-bot
+if [[ -f /etc/ai-bot/config.json ]]; then
+  cp -a /etc/ai-bot/config.json "$STAGING/config.backup"
+  chown root:aibot /etc/ai-bot/config.json
+  chmod 0640 /etc/ai-bot/config.json
+fi
+if [[ -f /etc/systemd/system/ai-bot.service ]]; then
+  cp -a /etc/systemd/system/ai-bot.service "$STAGING/ai-bot.service.old"
+fi
+if [[ -f /usr/local/bin/aibot ]]; then cp -a /usr/local/bin/aibot "$STAGING/aibot.old"; fi
+if [[ -f /usr/local/lib/ai-bot/ai-bot ]]; then
+  cp -a /usr/local/lib/ai-bot/ai-bot "$STAGING/ai-bot.binary.old"
+fi
+
+echo "Шаг 2/3. Обновляем программу. История, API-ключи и настройки останутся на месте..."
+# The optional domain panel executes the same Go binary; stop it before
+# replacing the executable, without stopping the TLS proxy or the VPN.
+PANEL_WAS_ACTIVE=false
+PANEL_TLS_WAS_ACTIVE=false
+if systemctl is-active --quiet ai-bot-panel-tls.service 2>/dev/null; then
+  PANEL_TLS_WAS_ACTIVE=true
+fi
+if systemctl is-active --quiet ai-bot-panel.service 2>/dev/null; then
+  PANEL_WAS_ACTIVE=true
+  systemctl stop ai-bot-panel.service
+fi
+systemctl stop ai-bot.service 2>/dev/null || true
+install -m 0755 -o root -g root "$STAGING/ai-bot-linux-$ARCH" /usr/local/lib/ai-bot/ai-bot
+cat >/usr/local/bin/aibot <<'WRAPPER'
+#!/usr/bin/env bash
+exec /usr/local/lib/ai-bot/ai-bot "$@"
+WRAPPER
+chmod 0755 /usr/local/bin/aibot
+cat >/etc/systemd/system/ai-bot.service <<'SERVICE'
+[Unit]
+Description=AI-bot VK — native Go
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=aibot
+Group=aibot
+WorkingDirectory=/var/lib/ai-bot
+ExecStart=/usr/local/lib/ai-bot/ai-bot run
+Restart=on-failure
+RestartSec=8
+Environment=GOMEMLIMIT=180MiB
+Environment=GOGC=100
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ai-bot
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+systemctl daemon-reload
+systemctl enable ai-bot.service >/dev/null
+if ! /usr/local/bin/aibot is-configured; then
+  echo "Шаг 3/3. Это первый запуск: подключим страницу сообщества ВК и бесплатный ИИ."
+  echo "Инструкция по ВК откроется в мастере. Не отправляйте токен в чат."
+  if [[ -r /dev/tty ]] && (: </dev/tty) 2>/dev/null; then
+    /usr/local/bin/aibot setup </dev/tty
+  else
+    echo "Терминал сейчас недоступен: это не ошибка скачивания."
+    echo "Подключитесь к серверу через SSH и выполните: sudo aibot setup"
+    echo "Для подсказок об ID и токене сообщества: sudo aibot guide"
+  fi
+fi
+if /usr/local/bin/aibot is-configured; then
+  chown root:aibot /etc/ai-bot/config.json
+  chmod 0640 /etc/ai-bot/config.json
+  # systemctl restart can return success even when the process exits immediately.
+  if ! systemctl restart ai-bot.service || ! (sleep 3; systemctl is-active --quiet ai-bot.service); then
+    echo "Ошибка запуска новой службы. Попытка восстановления прежней версии..."
+    [[ ! -f "$STAGING/ai-bot.service.old" ]] || cp -a "$STAGING/ai-bot.service.old" /etc/systemd/system/ai-bot.service
+    [[ ! -f "$STAGING/aibot.old" ]] || cp -a "$STAGING/aibot.old" /usr/local/bin/aibot
+    [[ ! -f "$STAGING/ai-bot.binary.old" ]] || cp -a "$STAGING/ai-bot.binary.old" /usr/local/lib/ai-bot/ai-bot
+    [[ ! -f "$STAGING/config.backup" ]] || cp -a "$STAGING/config.backup" /etc/ai-bot/config.json
+    systemctl daemon-reload
+    systemctl restart ai-bot.service || true
+    if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+      systemctl restart ai-bot-panel.service || true
+    fi
+    if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+      systemctl restart ai-bot-panel-tls.service || true
+    fi
+    exit 1
+  fi
+  if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+    if ! systemctl restart ai-bot-panel.service; then
+      echo "Панель не перезапустилась. Проверьте: journalctl -u ai-bot-panel -n 50"
+    fi
+  fi
+  if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+    if ! systemctl restart ai-bot-panel-tls.service; then
+      echo "HTTPS-панель не запустилась. Проверьте journalctl -u ai-bot-panel-tls"
+    fi
+  fi
+  echo "✓ AI-bot Go установлен и служба запущена."
+  echo "────────────────────────────────"
+  echo "Что делать дальше:"
+  echo "  sudo aibot menu     — удобное меню с состояниями ВКЛ/ВЫКЛ"
+  echo "  sudo aibot next     — следующий шаг настройки"
+  echo "  sudo aibot guide    — где найти ID и токен сообщества ВК"
+  echo "  sudo aibot doctor   — проверить подключения"
+  echo "Для проверки в чате добавьте сообщество ВК в беседу и упомяните его."
+else
+  systemctl stop ai-bot.service 2>/dev/null || true
+  if [[ "$PANEL_WAS_ACTIVE" == true ]]; then
+    systemctl restart ai-bot-panel.service || true
+  fi
+  if [[ "$PANEL_TLS_WAS_ACTIVE" == true ]]; then
+    systemctl restart ai-bot-panel-tls.service || true
+  fi
+  echo "✓ Программа установлена, но бот пока не настроен — запуск отложен."
+  echo "Далее: подключитесь к VDS через SSH и выполните sudo aibot setup"
+  echo "Подробная инструкция по ВК: sudo aibot guide"
+fi
+
+# Enable verified hourly updates only after a successful installation.
+install -m 0755 -o root -g root "$STAGING/ai-bot-update" /usr/local/lib/ai-bot/ai-bot-update
+cat >/etc/systemd/system/ai-bot-update.service <<'UPDATE_SERVICE'
+[Unit]
+Description=AI-bot verified automatic update
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ai-bot/ai-bot-update
+TimeoutStartSec=5min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/usr/local/lib/ai-bot /run/lock
+UPDATE_SERVICE
+cat >/etc/systemd/system/ai-bot-update.timer <<'UPDATE_TIMER'
+[Unit]
+Description=Check AI-bot release updates hourly
+
+[Timer]
+OnBootSec=10min
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Persistent=true
+Unit=ai-bot-update.service
+
+[Install]
+WantedBy=timers.target
+UPDATE_TIMER
+systemctl daemon-reload
+systemctl enable --now ai-bot-update.timer
+echo "✓ Автообновление включено: проверка примерно раз в час."
+echo "  Проверка: systemctl list-timers ai-bot-update.timer"
+ || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 
