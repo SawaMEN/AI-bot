@@ -168,7 +168,7 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
   words:=strings.Fields(strings.ToLower(text))
   if len(words)>0 {
    for _,command:=range []string{"меню","старт","помощь","help","настройки","модели","модель",
-    "выбор","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
+    "выбор","вопрос","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
     if words[0]==command{return text,true}
    }
   }
