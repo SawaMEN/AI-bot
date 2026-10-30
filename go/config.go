@@ -29,6 +29,7 @@ type Config struct {
  FreeFallback bool `json:"free_fallback"`
  Providers map[string]ProviderConfig `json:"providers"`
  EnabledModels []string `json:"enabled_models"`
+ RussianBlockedModels []string `json:"russian_blocked_models,omitempty"`
  AutoModelsProviders []string `json:"auto_models_providers"`
  DefaultModel string `json:"default_model"`
 }

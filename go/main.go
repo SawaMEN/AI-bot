@@ -154,8 +154,9 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
   fmt.Fprintf(w.out,"\n %2d. Основная модель: %s\n",n+1,func()string{if cfg.DefaultModel!=""{return c.label(cfg.DefaultModel)};return "не выбрана"}())
   fmt.Fprintf(w.out," %2d. Проверить доступные бесплатные модели\n",n+2)
   fmt.Fprintf(w.out," %2d. Включить автоподбор у уже подключённых сервисов\n",n+3)
+  fmt.Fprintf(w.out," %2d. Проверить русский язык и доступность моделей\n",n+4)
   fmt.Fprintln(w.out,"  0. Вернуться в главное меню")
-  choice:=w.integer("Номер пункта",0,0,n+3)
+  choice:=w.integer("Номер пункта",0,0,n+4)
   if choice==0{return}
   if choice<=n{w.provider(cfg,c,c.Order[choice-1])}
   if choice==n+1{
@@ -187,6 +188,11 @@ func(w Wizard) setupModels(cfg *Config,c *Catalog){
     }
    }
    fmt.Fprintf(w.out,"✓ Автоподбор включён для %d дополнительных сервисов.\n",changed)
+  }
+  if choice==n+4{
+   ctx,cancel:=context.WithTimeout(context.Background(),15*time.Minute)
+   if err:=checkRussianModels(ctx,cfg,c,w.out);err!=nil{fmt.Fprintln(w.out,"Ошибка проверки:",err)}
+   cancel()
   }
   if err:=saveConfig(*cfg);err!=nil{fmt.Fprintln(w.out,"✗ Не удалось сохранить настройки:",err)}
  }
@@ -346,7 +352,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.1")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.2")
  case "setup":
   fmt.Fprintln(w.out,"=== ПЕРВАЯ НАСТРОЙКА AI-bot ===")
   fmt.Fprintln(w.out,"Нужно сделать всего две вещи: (1) подключить сообщество ВК, (2) выбрать бесплатный ИИ.")
@@ -360,6 +366,10 @@ func run()error{
  case "guide":fmt.Fprintln(w.out,vkSetupGuide(cfg.GroupID))
  case "next":fmt.Fprint(w.out,setupSummary(cfg,catalog));fmt.Fprintln(w.out,nextSetupStep(cfg,catalog))
  case "doctor","status":fmt.Println(doctor(context.Background(),cfg))
+ case "check-models":
+  ctx,cancel:=context.WithTimeout(context.Background(),15*time.Minute)
+  defer cancel()
+  return checkRussianModels(ctx,&cfg,catalog,os.Stdout)
  case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
  case "panel":return panelCommand(w,os.Args[2:])
@@ -369,7 +379,7 @@ func run()error{
  case "api":w.setupModels(&cfg,catalog);applySettings(w,cfg,catalog)
  case "behavior":w.behavior(&cfg);applySettings(w,cfg,catalog)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
- default:return errors.New("команды: menu, setup, guide, next, doctor, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
+ default:return errors.New("команды: menu, setup, guide, next, doctor, check-models, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
  }
  return nil
 }

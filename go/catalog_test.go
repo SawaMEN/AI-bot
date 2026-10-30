@@ -9,8 +9,8 @@ import (
 )
 func TestRegistryFreeOnly(t *testing.T) {
  c,err:=newCatalog();if err!=nil{t.Fatal(err)}
- if len(c.Specs)<10{t.Fatal("provider registry incomplete")}
- for _,bad:=range []string{"openrouter:gpt-4o","openai:gpt-4o","groq:paid-model"} {
+ if len(c.Specs)<9{t.Fatal("provider registry incomplete")}
+ for _,bad:=range []string{"openrouter:gpt-4o","openai:gpt-4o","groq:paid-model","groq:llama-3.1-8b-instant","openrouter:openrouter/free"} {
   p,id,e:=splitModel(bad);if e==nil&&c.modelAllowedID(p,id){t.Errorf("paid model allowed %s",bad)}
  }
 }
@@ -28,10 +28,10 @@ func TestCatalogPrice(t *testing.T) {
 func TestDynamicDiscoveryFailClosed(t *testing.T){
  c,_:=newCatalog()
  srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-  w.Write([]byte(`{"data":[{"id":"a/model:free","pricing":{"prompt":"0","completion":"0"}},{"id":"b/model:free","pricing":{"prompt":"0.1","completion":"0"}}]}`))
+  w.Write([]byte(`{"data":[{"id":"qwen/model:free","pricing":{"prompt":"0","completion":"0"}},{"id":"b/model:free","pricing":{"prompt":"0.1","completion":"0"}}]}`))
  }));defer srv.Close()
  p:=c.Specs["openrouter"];p.CatalogURL=srv.URL;c.Specs["openrouter"]=p
  // HTTP is used only inside mock TLS-free catalogue test; runtime registry is HTTPS.
  list,err:=c.discover(context.Background(),p,"test");if err!=nil{t.Fatal(err)}
- if len(list)!=1||list[0].ID!="a/model:free"{t.Fatalf("unexpected discovered: %+v",list)}
+ if len(list)!=1||list[0].ID!="qwen/model:free"{t.Fatalf("unexpected discovered: %+v",list)}
 }

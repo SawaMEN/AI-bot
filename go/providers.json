@@ -16,14 +16,6 @@
         [
           "openai/gpt-oss-120b",
           "GPT-OSS 120B"
-        ],
-        [
-          "llama-3.1-8b-instant",
-          "Llama 3.1 8B"
-        ],
-        [
-          "llama-3.3-70b-versatile",
-          "Llama 3.3 70B"
         ]
       ]
     },
@@ -56,12 +48,7 @@
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "free_policy": "priced_openrouter",
       "catalog_url": "https://openrouter.ai/api/v1/models",
-      "models": [
-        [
-          "openrouter/free",
-          "Автовыбор бесплатной модели"
-        ]
-      ]
+      "models": []
     },
     {
       "id": "cloudflare",
@@ -164,17 +151,6 @@
       "endpoint": "https://gen.pollinations.ai/v1/chat/completions",
       "catalog_url": "https://gen.pollinations.ai/text/models",
       "free_policy": "priced_pollinations",
-      "models": []
-    },
-    {
-      "id": "aihorde",
-      "name": "AI Horde (волонтёры)",
-      "key_url": "https://aihorde.net/register",
-      "type": "openai",
-      "endpoint": "https://oai.aihorde.net/v1/chat/completions",
-      "catalog_url": "https://oai.aihorde.net/v1/models",
-      "free_policy": "volunteer",
-      "anonymous_key": "0000000000",
       "models": []
     }
   ]

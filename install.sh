@@ -33,7 +33,7 @@ bash -n "$STAGING/ai-bot-update" || { echo "Ошибка скрипта авто
 echo "✓ Файлы скачаны, контрольные суммы проверены."
 chmod 0755 "$STAGING/ai-bot-linux-$ARCH"
 # Validate the downloaded binary before stopping the currently running service.
-"$STAGING/ai-bot-linux-$ARCH" version | grep -Fq "AI-bot Go v1.5.1" || {
+"$STAGING/ai-bot-linux-$ARCH" version | grep -Eq "^AI-bot Go v[0-9]+[.][0-9]+[.][0-9]+$" || {
   echo "Бинарник не прошёл проверку версии. Старая служба не изменена."; exit 1;
 }
 

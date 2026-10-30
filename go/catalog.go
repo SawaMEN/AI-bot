@@ -56,10 +56,21 @@ func (c *Catalog) modelAllowedID(provider,id string) bool {
  spec,ok:=c.Specs[provider];if !ok||!safeModelID.MatchString(id){return false}
  switch spec.FreePolicy {
  case "curated":for _,m:=range spec.Models{if len(m)>=1&&m[0]==id{return true}};return false
- case "priced_openrouter":return id=="openrouter/free"||strings.HasSuffix(id,":free")
- case "priced_pollinations","volunteer":return true
+ case "priced_openrouter":return strings.HasSuffix(id,":free")&&russianCandidate(id)
+ case "priced_pollinations":return russianCandidate(id)
+ case "volunteer":return false
  default:return false
  }
+}
+// Dynamic catalogs cannot prove language ability from prices or model IDs alone.
+// Only shortlist broadly multilingual text families; an authenticated Russian
+// probe and response guard perform the functional language check.
+func russianCandidate(id string)bool{
+ name:=strings.ToLower(id)
+ for _,family:=range []string{"gpt-oss","gemini","qwen","glm-","deepseek","mistral","gemma","llama","kimi","minimax","nemotron"}{
+  if strings.Contains(name,family){return true}
+ }
+ return false
 }
 func (c *Catalog) label(key string)string {
  provider,model,_:=splitModel(key);spec:=c.Specs[provider]
@@ -75,17 +86,16 @@ func (c *Catalog) enabled(cfg Config) []string {
   verified:=map[string]bool{};for _,m:=range c.verified[name]{verified[m.ID]=true}
   add:=func(model string) {
    key:=name+":"+model
-   if !seen[key]&&c.modelAllowedID(name,model){seen[key]=true;result=append(result,key)}
+   if !seen[key]&&!contains(cfg.RussianBlockedModels,key)&&c.modelAllowedID(name,model){seen[key]=true;result=append(result,key)}
   }
   for _,key:=range cfg.EnabledModels {
    p,id,err:=splitModel(key);if err!=nil||p!=name||!c.modelAllowedID(p,id){continue}
-   if spec.FreePolicy=="curated"||name=="openrouter"&&id=="openrouter/free"||verified[id]{add(id)}
+   if spec.FreePolicy=="curated"||verified[id]{add(id)}
   }
   auto:=false;for _,p:=range cfg.AutoModelsProviders{if p==name{auto=true;break}}
   if auto {
    if spec.FreePolicy=="curated"{for _,m:=range spec.Models{add(m[0])}
    }else{
-    if name=="openrouter"{add("openrouter/free")}
     for _,m:=range c.verified[name]{add(m.ID)}
    }
   }
@@ -132,7 +142,7 @@ func (c *Catalog) discover(ctx context.Context,p ProviderSpec,key string)([]Mode
  for _,raw:=range items {
   item,ok:=raw.(map[string]any);if !ok||!freeItem(p,item){continue}
   id,_:=item["id"].(string);if id==""{id,_=item["name"].(string)}
-  if !safeModelID.MatchString(id)||found[id]{continue}
+  if !safeModelID.MatchString(id)||found[id]||!c.modelAllowedID(p.ID,id){continue}
   found[id]=true;title,_:=item["display_name"].(string);if title==""{title,_=item["name"].(string)}
   if title==""{title=id};if len(title)>80{title=title[:80]}
   models=append(models,Model{id,title});if len(models)>=150{break}
@@ -163,7 +173,7 @@ func (c *Catalog) refresh(ctx context.Context,cfg Config)map[string]string {
    var err error
    if settings.Enabled&&key!=""{models,err=c.discover(ctx,p,key)}
    c.mu.Lock()
-   delete(c.verified,name)
+   // Temporary catalog outages must not discard previously verified models.
    if err==nil&&settings.Enabled&&key!=""{c.verified[name]=models}
    c.mu.Unlock()
    if err!=nil{
