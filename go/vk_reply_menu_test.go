@@ -117,7 +117,7 @@ func TestVKTextKeyboardSentViaMessagesSend(t *testing.T){
 func TestVKReplyMenuNavigationReturnsToContext(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
  for _,tc:=range []struct{command,want string}{
-  {"меню","🤖 Выбрать ИИ"},
+  {"меню","💬 Задать вопрос"},
   {"настройки","🧠 Контекст"},
   {"модели","Автоматически"},
   {"выбор поиска","Искать"},
