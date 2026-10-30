@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.3'
-      - run: bash -n install.sh scripts/auto-update.sh
+      - run: bash -n install.sh && bash -n scripts/auto-update.sh
       - run: go mod tidy
       - run: go vet ./go/...
       - run: go test ./go/...
