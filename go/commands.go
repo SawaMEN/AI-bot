@@ -144,6 +144,7 @@ func processCommand(ctx context.Context,v *VK,s *Store,c *Catalog,cfg Config,pee
  first:=strings.ToLower(strings.Trim(args[0],",.:;!?"))
  switch first{
  case "меню","старт":return vkHome(s,c,cfg,peer,user),true
+ case "вопрос":return "Напишите свой вопрос следующим сообщением — я отвечу на русском языке. В личном диалоге упоминание бота не требуется.",true
  case "помощь","help":return helpText(),true
  case "права","разрешения","подключение":return permissionHelp(cfg),true
  case "настройки":return personalInfo(s,c,cfg,peer,user),true

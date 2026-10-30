@@ -18,6 +18,7 @@ type VKMessage struct {
  ConversationMessageID int64 `json:"conversation_message_id"`
  ID int64 `json:"id"`
  Text string `json:"text"`
+ Payload json.RawMessage `json:"payload,omitempty"`
  Out int `json:"out"`
  ReplyMessage *VKMessage `json:"reply_message,omitempty"`
 }

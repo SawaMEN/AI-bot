@@ -141,6 +141,15 @@ func mentionExpression(groupID int64)*regexp.Regexp {
 func questionFor(cfg Config,m VKMessage) (string,bool) {
  if !m.Valid(){return "",false}
  text:=strings.TrimSpace(m.Text)
+ // VK permanent text-keyboard buttons generate message_new rather than a
+ // message_event. They carry a trusted *menu shape*, not a user identity.
+ // Only use these in private chats to avoid hijacking normal group messages.
+ if m.PeerID<2000000000&&m.FromID>0{
+  if command:=vkReplyCommand(m.Payload);command!=""{return command,true}
+  // Some clients omit payload. Accept exact known menu labels; arbitrary
+  // words remain normal messages for the AI.
+  if command:=vkReplyLabel(text);command!=""{return command,true}
+ }
  if len(text)>=len(cfg.Trigger)&&strings.EqualFold(text[:len(cfg.Trigger)],cfg.Trigger) {
   rest:=text[len(cfg.Trigger):]
   if rest==""||strings.ContainsRune(" ,.:;!?\t\n",rune(rest[0])) {return strings.TrimSpace(strings.TrimLeft(rest," ,.:;!?")),true}
@@ -159,10 +168,14 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
   words:=strings.Fields(strings.ToLower(text))
   if len(words)>0 {
    for _,command:=range []string{"меню","старт","помощь","help","настройки","модели","модель",
-    "выбор","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
+    "выбор","вопрос","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
     if words[0]==command{return text,true}
    }
   }
+  // Private messages with the community are a natural one-on-one chat:
+  // any other text is an AI question. Group chats still require an
+  // explicit mention, /ai or a reply to the bot.
+  return text,true
  }
  return "",false
 }
