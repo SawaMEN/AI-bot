@@ -39,10 +39,16 @@ func nonRussianProse(answer string)bool {
    }else if unicode.IsLetter(r){other++}
   }
  }
- return cyrillic==0&&latin+other>=12 || cyrillic<4&&latin+other>80
+ return (cyrillic==0&&latin+other>=12) || (latin+other>40&&latin+other>6*cyrillic)
 }
 func russianProbeOK(answer string)bool {
- return strings.Contains(strings.ToLower(answer),"москв")
+ if !strings.Contains(strings.ToLower(answer),"москв"){return false}
+ var cyr,latin int
+ for _,r:=range answer{
+  if unicode.In(r,unicode.Cyrillic){cyr++}
+  if unicode.In(r,unicode.Latin){latin++}
+ }
+ return cyr>=5&&cyr*2>=latin
 }
 // Check connected models with real authenticated Russian prompts. An HTTP
 // timeout, quota error or expired key is NOT evidence of a language failure.
@@ -51,10 +57,14 @@ func checkRussianModels(ctx context.Context,cfg *Config,c *Catalog,out io.Writer
  fmt.Fprintln(out,"Проверка моделей на понимание русского языка через их API...")
  problems:=c.refresh(ctx,*cfg)
  for provider,problem:=range problems{fmt.Fprintf(out,"Каталог %s: %s\n",provider,problem)}
- keys:=c.enabled(*cfg)
+ // Re-test previously quarantined models as well, to allow recovery
+ // without asking the administrator to hand-edit the config.
+ probeConfig:=*cfg
+ probeConfig.RussianBlockedModels=nil
+ keys:=c.enabled(probeConfig)
  if len(keys)==0{return fmt.Errorf("нет доступных моделей: проверьте ключи и включённые модели")}
  ai:=newAI(c)
- blocked:=0;okCount:=0;unavailable:=0
+ blocked:=0;okCount:=0;unavailable:=0;restored:=0;changed:=false
  for i,key:=range keys {
   if ctx.Err()!=nil{return ctx.Err()}
   fmt.Fprintf(out,"[%d/%d] %s ... ",i+1,len(keys),c.label(key))
@@ -64,7 +74,7 @@ func checkRussianModels(ctx context.Context,cfg *Config,c *Catalog,out io.Writer
    "Назови на русском языке столицу России. Не используй английский.",
   } {
    requestCtx,cancel:=context.WithTimeout(ctx,28*time.Second)
-   result,err:=ai.generate(requestCtx,*cfg,key,[]Message{
+   result,err:=ai.generate(requestCtx,probeConfig,key,[]Message{
     {Role:"system",Content:"Тест понимания русского языка. Отвечай исключительно по-русски."},
     {Role:"user",Content:prompt},
    })
@@ -77,20 +87,26 @@ func checkRussianModels(ctx context.Context,cfg *Config,c *Catalog,out io.Writer
   case valid:
    fmt.Fprintln(out,"✓ русский язык подтверждён")
    okCount++
+   if contains(cfg.RussianBlockedModels,key){
+    cfg.RussianBlockedModels=removeExact(cfg.RussianBlockedModels,key)
+    restored++;changed=true
+   }
   case failed!=nil:
    fmt.Fprintf(out,"? API недоступен (%v), модель не удалена\n",failed)
    unavailable++
   case bad==2:
    fmt.Fprintln(out,"✗ не прошла две проверки русского языка — исключена из выбора")
-   if !contains(cfg.RussianBlockedModels,key){cfg.RussianBlockedModels=append(cfg.RussianBlockedModels,key)}
-   blocked++
+   if !contains(cfg.RussianBlockedModels,key){
+    cfg.RussianBlockedModels=append(cfg.RussianBlockedModels,key)
+    blocked++;changed=true
+   }
   }
  }
- if blocked>0{
+ if changed{
   cfg.DefaultModel=c.defaultModel(*cfg)
   if err:=saveConfig(*cfg);err!=nil{return fmt.Errorf("не удалось сохранить исключения: %w",err)}
  }
- fmt.Fprintf(out,"Результат: подтвердили русский — %d, исключены — %d, временно недоступны — %d.\n",okCount,blocked,unavailable)
- if blocked>0{fmt.Fprintln(out,"Чтобы применить исключения к работающему боту: sudo aibot restart")}
+ fmt.Fprintf(out,"Результат: подтвердили русский — %d, исключены — %d, восстановлены — %d, временно недоступны — %d.\n",okCount,blocked,restored,unavailable)
+ if changed{fmt.Fprintln(out,"Чтобы применить исключения к работающему боту: sudo aibot restart")}
  return nil
 }
