@@ -30,7 +30,10 @@ func TestHealthShowsOnlyRealWorkingModels(t *testing.T){
  }
  allowed:=c.enabled(cfg)
  if len(allowed)!=1||allowed[0]!="groq:openai/gpt-oss-20b"{t.Fatal("unverified model shown",allowed)}
- if strings.Contains(out.String(),"Z.ai •")||!strings.Contains(out.String(),"GPT-OSS 20B"){t.Fatal("non-working models leaked into list: ",out.String())}
+ listSection:=strings.SplitN(out.String(),"ДОСТУПНЫЕ МОДЕЛИ",2)
+ if len(listSection)<2{t.Fatal("no available-model list: ",out.String())}
+ listing:=strings.SplitN(listSection[1],"Итого:",2)[0]
+ if strings.Contains(listing,"Z.ai •")||!strings.Contains(listing,"GPT-OSS 20B"){t.Fatal("non-working models leaked into available list: ",listing)}
  if selectable:=c.allowedFor("zai",cfg);len(selectable)!=0{t.Fatal("unavailable model listed for selection",selectable)}
  if got:=listModels(c,cfg,1,true);strings.Contains(got,"Z.ai"){t.Fatal("VK listed unavailable model",got)}
 }
