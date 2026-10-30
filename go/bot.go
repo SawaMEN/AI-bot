@@ -5,6 +5,7 @@ import (
  "errors"
  "encoding/json"
  "fmt"
+ "io"
  "log"
  "net/url"
  "strings"
@@ -174,6 +175,7 @@ func catalogRetryDelay(problems map[string]string,available int)time.Duration{
 func runBot(ctx context.Context,cfg Config)error{
  store,err:=openStore(dataPath());if err!=nil{return err};defer store.close()
  catalog,err:=newCatalog();if err!=nil{return err}
+ catalog.health=newModelHealth(modelHealthPath())
  startupErrors:=catalog.refresh(ctx,cfg)
  if cfg.VKToken==""||cfg.GroupID<1{return errors.New("настройте токен сообщества ВК через sudo aibot setup")}
  enabledProvider:=false;for id,p:=range cfg.Providers{
@@ -184,9 +186,27 @@ func runBot(ctx context.Context,cfg Config)error{
  store.cleanup(cfg.RetentionDays)
  workerCtx,stopWorkers:=context.WithCancel(ctx)
  var workers sync.WaitGroup
- workers.Add(2)
+ workers.Add(3)
  defer func(){stopWorkers();workers.Wait()}()
  go func(){defer workers.Done();b.processPending(workerCtx)}()
+ // Verify every configured model through its actual free API. Reuse recent
+ // results after a restart; periodically recheck stale successes and failures.
+ go func(){
+  defer workers.Done()
+  for workerCtx.Err()==nil{
+   checkCtx,cancel:=context.WithTimeout(workerCtx,50*time.Minute)
+   if err:=scanAvailableModels(checkCtx,cfg,catalog,io.Discard,false);err!=nil&&workerCtx.Err()==nil{
+    log.Printf("Проверка доступности моделей: %v",err)
+   }
+   cancel()
+   timer:=time.NewTimer(time.Hour)
+   select {
+   case <-workerCtx.Done():
+    timer.Stop();return
+   case <-timer.C:
+   }
+  }
+ }()
  go func(){
   defer workers.Done()
   timer:=time.NewTimer(catalogRetryDelay(startupErrors,len(catalog.enabled(cfg))))
@@ -277,7 +297,7 @@ func doctor(ctx context.Context,cfg Config)string{
  report.WriteString(vkDiagnostics(ctx,cfg))
  report.WriteString("\n\n")
  report.WriteString(nextSetupStep(cfg,c))
- report.WriteString("\nИИ недоступен: sudo aibot check-ai (DNS/TCP/TLS и реальный ответ).\n")
+ report.WriteString("\nПоказаны только модели, прошедшие проверку на этом сервере. Полная проверка: sudo aibot check-ai\n")
  report.WriteString("Только сеть без запросов к ИИ: sudo aibot check-ai network\n")
  report.WriteString("Если бот не отвечает на упоминание: sudo aibot logs\n")
  return report.String()
