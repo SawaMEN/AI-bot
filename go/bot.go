@@ -175,7 +175,11 @@ func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload [
  text,ok:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,peer,user,cmd)
  if !ok{return}
  buttons:=buttonsFor(cmd,b.catalog,b.cfg)
- if conversationMessageID>0 {
+ // In a group an inline menu is shared: editing it in place could
+ // expose one participant's personal preferences to everyone, or cause
+ // concurrent button presses to overwrite each other's screen. Reuse
+ // messages only for private conversations with the community.
+ if peer<2000000000&&conversationMessageID>0 {
   if err:=b.vk.editMenu(ctx,peer,conversationMessageID,text,buttons);err==nil{return}
  }
  if err:=b.vk.send(ctx,peer,text,buttons,"callback:"+eventID);err!=nil{
