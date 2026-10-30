@@ -172,6 +172,10 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
     if words[0]==command{return text,true}
    }
   }
+  // Private messages with the community are a natural one-on-one chat:
+  // any other text is an AI question. Group chats still require an
+  // explicit mention, /ai or a reply to the bot.
+  return text,true
  }
  return "",false
 }
