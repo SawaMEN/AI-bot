@@ -291,9 +291,10 @@ func menu(w Wizard,cfg Config,c *Catalog){
   fmt.Fprintln(w.out,"  9. Включить получение сообщений и кнопок ВК")
   fmt.Fprintln(w.out," 10. Где найти ID и токен ВК? (пошаговая инструкция)")
   fmt.Fprintln(w.out," 11. Что делать дальше?")
+  fmt.Fprintln(w.out," 12. Проверить доступность ИИ с этого сервера")
   fmt.Fprintln(w.out,"  0. Выход")
   fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,c))
-  choice:=w.integer("Введите номер пункта",0,0,11)
+  choice:=w.integer("Введите номер пункта",0,0,12)
   switch choice{
   case 0:return
   case 1:w.setupVK(&cfg);applySettings(w,cfg,c)
@@ -331,6 +332,10 @@ func menu(w Wizard,cfg Config,c *Catalog){
    fmt.Fprint(w.out,setupSummary(cfg,c))
    fmt.Fprintln(w.out,nextSetupStep(cfg,c))
    fmt.Fprintln(w.out,"Полная инструкция: sudo aibot guide")
+  case 12:
+   ctx,cancel:=context.WithTimeout(context.Background(),5*time.Minute)
+   if err:=checkAIConnectivity(ctx,cfg,c,w.out,false);err!=nil{fmt.Fprintln(w.out,"✗ Проверка ИИ:",err)}
+   cancel()
   }
  }
 }
@@ -352,7 +357,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.2")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.3")
  case "setup":
   fmt.Fprintln(w.out,"=== ПЕРВАЯ НАСТРОЙКА AI-bot ===")
   fmt.Fprintln(w.out,"Нужно сделать всего две вещи: (1) подключить сообщество ВК, (2) выбрать бесплатный ИИ.")
@@ -370,6 +375,12 @@ func run()error{
   ctx,cancel:=context.WithTimeout(context.Background(),15*time.Minute)
   defer cancel()
   return checkRussianModels(ctx,&cfg,catalog,os.Stdout)
+ case "check-ai":
+  networkOnly:=len(os.Args)==3&&os.Args[2]=="network"
+  if len(os.Args)>3||len(os.Args)==3&&!networkOnly{return errors.New("использование: sudo aibot check-ai [network]")}
+  ctx,cancel:=context.WithTimeout(context.Background(),5*time.Minute)
+  defer cancel()
+  return checkAIConnectivity(ctx,cfg,catalog,os.Stdout,networkOnly)
  case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
  case "panel":return panelCommand(w,os.Args[2:])
@@ -379,7 +390,7 @@ func run()error{
  case "api":w.setupModels(&cfg,catalog);applySettings(w,cfg,catalog)
  case "behavior":w.behavior(&cfg);applySettings(w,cfg,catalog)
  case "clear":s,e:=openStore(dataPath());if e!=nil{return e};defer s.close();return s.clearMessages()
- default:return errors.New("команды: menu, setup, guide, next, doctor, check-models, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
+ default:return errors.New("команды: menu, setup, guide, next, doctor, check-models, check-ai, api, vk, behavior, logs, restart, panel, version; также: panel setup ДОМЕН / status / off / reset")
  }
  return nil
 }
