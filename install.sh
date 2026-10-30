@@ -15,17 +15,27 @@ case "$(uname -m)" in
   *) echo "Поддерживаются только Linux amd64/arm64"; exit 1 ;;
 esac
 RELEASE="https://github.com/SawaMEN/AI-bot/releases/latest/download"
+# Interactive SSH terminals display actual byte-transfer progress. When the
+# installer is piped to bash or run by automation, output remains concise.
+download_release() {
+  local target="$1" source="$2"
+  if [[ -t 2 && "${TERM:-dumb}" != dumb && -z "${CI:-}" ]]; then
+    curl -fL --progress-bar --retry 2 --connect-timeout 12 -o "$target" "$source"
+  else
+    curl -fLsS --retry 2 --connect-timeout 12 -o "$target" "$source"
+  fi
+}
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 echo "══════ УСТАНОВКА AI-bot ═════="
 echo "Шаг 1/3. Скачиваем готовую программу для Linux $ARCH..."
-curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/ai-bot-linux-$ARCH" "$RELEASE/ai-bot-linux-$ARCH" ||
+download_release "$STAGING/ai-bot-linux-$ARCH" "$RELEASE/ai-bot-linux-$ARCH" ||
  { echo "Go-релиз ещё не опубликован. Старая версия не изменена."; exit 1; }
-curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/sha256sums.txt" "$RELEASE/sha256sums.txt" ||
+download_release "$STAGING/sha256sums.txt" "$RELEASE/sha256sums.txt" ||
  { echo "Не удалось загрузить контрольные суммы. Старая версия не изменена."; exit 1; }
 (cd "$STAGING" && grep " ai-bot-linux-$ARCH$" sha256sums.txt | sha256sum -c -) ||
  { echo "Неверная контрольная сумма! Установка прервана."; exit 1; }
-curl -fLsS --retry 2 --connect-timeout 12 -o "$STAGING/ai-bot-update" "$RELEASE/ai-bot-update" ||
+download_release "$STAGING/ai-bot-update" "$RELEASE/ai-bot-update" ||
  { echo "Не удалось загрузить автообновление. Старая версия не изменена."; exit 1; }
 (cd "$STAGING" && grep " ai-bot-update$" sha256sums.txt | sha256sum -c -) ||
  { echo "Контрольная сумма автообновления неверна!"; exit 1; }
