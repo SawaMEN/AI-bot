@@ -111,7 +111,7 @@ func TestVKTextKeyboardSentViaMessagesSend(t *testing.T){
  defer func(){vkAPIBaseURL=previous}()
  v:=newVK(cfg)
  if err:=v.send(context.Background(),42,"Откройте меню",replyMainBoard(),"test");err!=nil{t.Fatal(err)}
- if sent.Inline||len(sent.Buttons)!=2{t.Fatalf("reply keyboard not delivered: %+v",sent)}
+ if sent.Inline||len(sent.Buttons)!=3{t.Fatalf("reply keyboard not delivered: %+v",sent)}
 }
 
 func TestVKReplyMenuNavigationReturnsToContext(t *testing.T){
