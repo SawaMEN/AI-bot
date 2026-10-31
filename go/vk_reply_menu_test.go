@@ -132,7 +132,7 @@ func TestVKReplyMenuNavigationReturnsToContext(t *testing.T){
 }
 
 func TestVKReplyMenuRejectsInjectedCommands(t *testing.T){
- for _,command:=range []string{"rm -rf /","диалог поиск выкл","command xyz"}{
+ for _,command:=range []string{"rm -rf /","command xyz","unknown 123"}{
   raw,_:=json.Marshal(map[string]any{"aibot":1,"command":command})
   if got:=vkReplyCommand(raw);got!=""{t.Fatalf("unrecognized payload %q accepted as %q",command,got)}
  }
