@@ -26,7 +26,7 @@ func helpText()string {
 }
 func vkHome(s *Store,c *Catalog,cfg Config,peer,user int64)string{
  key,search,style,count,fallback:=s.effective(cfg,peer,user,c)
- model:="Пока нет работающих ИИ"
+ model:="Пока идёт проверка доступности ИИ"
  if key!=""{model=c.label(key)}
  chatHint:="Общие параметры доступны в беседе"
  if peer<2000000000{chatHint="Для общей настройки откройте меню внутри беседы"}
@@ -50,7 +50,7 @@ func readableStyle(v string)string{
 }
 func listModels(c *Catalog,cfg Config,page int,chat bool)string{
  allowed:=c.enabled(cfg)
- if len(allowed)==0{return "Сейчас нет подтверждённых работающих бесплатных моделей. Бот перепроверяет их автоматически. Администратор сервера может выполнить sudo aibot check-ai."}
+ if len(allowed)==0{return "Пока нет подтверждённых работающих моделей.\n\n"+modelAvailabilityExplanation(c,cfg)}
  maxPage:=(len(allowed)+2)/3
  if page<1{page=1};if page>maxPage{page=maxPage}
  var b strings.Builder
