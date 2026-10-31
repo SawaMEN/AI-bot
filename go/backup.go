@@ -1,13 +1,13 @@
 package main
 
 import (
- "database/sql"
  "fmt"
  "io"
  "os"
  "path/filepath"
  "sort"
  "strings"
+ "syscall"
  "time"
 )
 
@@ -17,6 +17,14 @@ import (
 func backupState(store *Store)(string,error){
  root:=filepath.Join(filepath.Dir(dataPath()),"backups")
  if err:=os.MkdirAll(root,0700);err!=nil{return "",err}
+ // A root-run manual backup must not make future service backups unwritable.
+ if os.Geteuid()==0{
+  if info,err:=os.Stat(filepath.Dir(root));err==nil{
+   if owner,ok:=info.Sys().(*syscall.Stat_t);ok{
+    if err:=os.Chown(root,int(owner.Uid),int(owner.Gid));err!=nil{return "",err}
+   }
+  }
+ }
  dest:=filepath.Join(root,time.Now().UTC().Format("20060102T150405.000000000Z"))
  if err:=os.Mkdir(dest,0700);err!=nil{return "",err}
  ok:=false
@@ -60,4 +68,3 @@ func periodicBackup(ctxDone <-chan struct{},store *Store,report func(error)){
  }
 }
 
-var _ *sql.DB
