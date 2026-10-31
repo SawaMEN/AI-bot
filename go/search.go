@@ -115,7 +115,20 @@ func webSearch(ctx context.Context,q string)[]Result{
  seen:=map[string]bool{}
  for i:=0;i<2;i++{
   var next []Result
-  select{case next=<-results:case <-child.Done():return merged}
+  if i==0{
+   select{case next=<-results:case <-child.Done():return merged}
+  }else{
+   // Avoid making users wait for one sluggish secondary search provider.
+   grace:=time.NewTimer(1500*time.Millisecond)
+   select{
+   case next=<-results:
+   case <-grace.C:
+    grace.Stop();return merged
+   case <-child.Done():
+    grace.Stop();return merged
+   }
+   grace.Stop()
+  }
   for _,item:=range next{
    link:=searchURL(item.URL);if link==""{continue}
    parsed,err:=url.Parse(link);if err!=nil{continue}
