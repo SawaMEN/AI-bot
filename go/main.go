@@ -293,7 +293,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.13")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.15")
  case "setup":
   if w.setupGuide(&cfg,catalog){applySettings(w,cfg,catalog)}
   fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,catalog))
@@ -314,6 +314,9 @@ func run()error{
  case "vk-events":w.configureVKEvents(cfg)
  case "web":return webServe(cfg,catalog)
  case "panel":return panelCommand(w,os.Args[2:])
+ case "stats":
+  store,err:=openStore(dataPath());if err!=nil{return err};defer store.close()
+  fmt.Fprintln(w.out,store.consoleUsageStats(cfg,catalog))
  case "backup":
   store,err:=openStore(dataPath());if err!=nil{return err};defer store.close()
   folder,err:=backupState(store);if err!=nil{return err}

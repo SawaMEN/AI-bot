@@ -31,7 +31,7 @@ jobs:
       - name: Publish downloadable binaries
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: go-v1.5.13
+          tag_name: go-v1.5.15
           name: AI-bot Go v1.5.10
           body: 'Native Go AI-bot. Linux amd64 and arm64, SQLite migration compatible with Python. Settings are kept. Free-provider availability depends on their API.'
           files: |
