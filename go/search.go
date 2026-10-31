@@ -9,6 +9,7 @@ import (
  "net/http"
  "net/url"
  "regexp"
+ "sort"
  "strings"
  "time"
  "unicode/utf8"
@@ -98,12 +99,50 @@ func wikiResults(ctx context.Context,q string)[]Result{
  }
  return output
 }
+// Query independent sources concurrently. The result URLs are references,
+// never proof that a page was fetched, and the model is told not to invent
+// publication dates or claim that results are necessarily current.
 func webSearch(ctx context.Context,q string)[]Result{
  q=strings.TrimSpace(q);if q==""{return nil}
  if utf8.RuneCountInString(q)>250{q=string([]rune(q)[:250])}
- results:=duckResults(ctx,q)
- if len(results)!=0{return results}
- return wikiResults(ctx,q)
+ child,cancel:=context.WithTimeout(ctx,10*time.Second);defer cancel()
+ results:=make(chan []Result,2)
+ for _,fetch:=range []func(context.Context,string)[]Result{duckResults,wikiResults}{
+  fn:=fetch
+  go func(){results<-fn(child,q)}()
+ }
+ merged:=[]Result{}
+ seen:=map[string]bool{}
+ for i:=0;i<2;i++{
+  var next []Result
+  select{case next=<-results:case <-child.Done():return merged}
+  for _,item:=range next{
+   link:=searchURL(item.URL);if link==""{continue}
+   parsed,err:=url.Parse(link);if err!=nil{continue}
+   parsed.Fragment=""
+   dedup:=strings.ToLower(strings.TrimSuffix(parsed.String(),"/"))
+   if seen[dedup]{continue}
+   seen[dedup]=true
+   item.URL=link
+   item.Title=safeExcerpt(item.Title,140)
+   item.Body=safeExcerpt(item.Body,350)
+   merged=append(merged,item)
+  }
+ }
+ words:=strings.Fields(strings.ToLower(q))
+ rank:=func(item Result)int{
+  corpus:=strings.ToLower(item.Title+" "+item.Body)
+  score:=0
+  for _,word:=range words{
+   if len([]rune(word))<4{continue}
+   if strings.Contains(corpus,word){score++}
+   if strings.Contains(strings.ToLower(item.Title),word){score+=2}
+  }
+  return score
+ }
+ sort.SliceStable(merged,func(i,j int)bool{return rank(merged[i])>rank(merged[j])})
+ if len(merged)>6{merged=merged[:6]}
+ return merged
 }
 func sourcesText(results []Result)string {
  var b strings.Builder
