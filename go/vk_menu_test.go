@@ -123,7 +123,7 @@ func TestVKLegacyCallbacksInstallPermanentPrivateMenu(t *testing.T){
  bot.button(context.Background(),42,42,"event-1",payload,37)
  bot.button(context.Background(),2000000001,42,"event-2",payload,37)
  if edits.Load()!=0||sends.Load()!=2||snacks.Load()!=2{t.Fatalf("edit=%d send=%d snack=%d",edits.Load(),sends.Load(),snacks.Load())}
- if privateInline||!groupInline{t.Fatalf("private should be persistent, group inline (private=%v group=%v)",privateInline,groupInline)}
+ if privateInline||groupInline{t.Fatalf("both private and group must use persistent keyboards (private=%v group=%v)",privateInline,groupInline)}
 }
 func TestVKMenuModelPagesRetainAutoAndBack(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()

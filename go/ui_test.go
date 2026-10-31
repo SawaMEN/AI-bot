@@ -47,8 +47,8 @@ func TestMenuNavigationHasGuidesAndExit(t *testing.T){
  menu(wizard,cfg,catalog)
  body:=output.String()
  for _,fragment:=range []string{
-  "AI-BOT • УПРАВЛЕНИЕ","Автоматическая настройка",
-  "Подключения","Диагностика","Помощь",
+  "AI-BOT • ГЛАВНОЕ МЕНЮ","ИИ и модели","Функции бота",
+  "ВКонтакте","Диагностика","Помощь",
  }{
   if !strings.Contains(body,fragment){t.Errorf("menu does not contain %q",fragment)}
  }

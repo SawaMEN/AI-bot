@@ -182,15 +182,15 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
 }
 func keyboardForPeer(peer int64,command string,c *Catalog,cfg Config)string{
  if peer>0&&peer<2000000000{return replyButtonsFor(command,c,cfg)}
- return buttonsFor(command,c,cfg)
+ return replyGroupButtonsFor(command,c,cfg)
 }
 func answerKeyboardForPeer(peer int64)string{
  if peer>0&&peer<2000000000{return replyMainBoard()}
- return answerBoard()
+ return replyGroupMainBoard()
 }
 func homeKeyboardForPeer(peer int64)string{
  if peer>0&&peer<2000000000{return replyMainBoard()}
- return mainBoard()
+ return replyGroupMainBoard()
 }
 
 // VK message_new for reply-keyboard text buttons contains the JSON payload
@@ -203,7 +203,7 @@ func vkReplyCommand(payload json.RawMessage)string{
  fields:=strings.Fields(strings.ToLower(command))
  if len(fields)==0{return ""}
  switch fields[0]{
- case "меню","старт","вопрос","помощь","настройки","права","модели","модель","ии","функции",
+ case "меню","старт","вопрос","помощь","настройки","права","модели","модель","ии","функции","диалог",
   "выбор","поиск","стиль","контекст","резерв","сброс","сбросить","подтвердить":
   return command
  }

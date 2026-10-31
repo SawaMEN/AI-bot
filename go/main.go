@@ -256,34 +256,19 @@ func activeBotService()string{
 }
 func menu(w Wizard,cfg Config,c *Catalog){
  for{
-  connected:=0
-  for _,id:=range c.Order{if cfg.Providers[id].Enabled{connected++}}
-  serviceState:="Не настроен"
-  if cfg.VKToken!=""&&cfg.GroupID>0{serviceState=fmt.Sprintf("Сообщество %d",cfg.GroupID)}
-  selectedModel:="Не выбрана"
-  if key:=c.defaultModel(cfg);key!=""{selectedModel=c.label(key)}
-  summary:=fmt.Sprintf("Служба: %s • ВК: %s\nИИ-провайдеров: %d • Работающих моделей: %d\nОсновная модель: %s\n%s",
-   activeBotService(),serviceState,connected,len(c.enabled(cfg)),selectedModel,nextSetupStep(cfg,c))
-  choice:=w.chooseMenu("AI-BOT • УПРАВЛЕНИЕ",summary,[]menuOption{
-   {1,"Автоматическая настройка","ВК → доступность API → ввод ключа → русский язык → запуск","Начать здесь"},
-   {2,"Подключения","Сообщество ВК, ИИ-провайдеры и события Long Poll",""},
-   {3,"Поведение бота","Контекст, поиск, лимиты и резервные модели",""},
-   {4,"Диагностика","Состояние системы, русский язык всех ИИ, сеть и журнал",""},
-   {5,"Веб-панель","HTTPS-домен или временный доступ через SSH",""},
-   {6,"Обслуживание","Перезапуск, журнал и очистка данных",""},
-   {7,"Помощь","Как подключить сообщество ВКонтакте",""},
-   {0,"Выход","Завершить управление",""},
-  })
+  summary:=fmt.Sprintf("Служба: %s • Бесплатных рабочих ИИ: %d",
+   activeBotService(),len(c.enabled(cfg)))
+  choice:=w.chooseMenu("AI-BOT • ГЛАВНОЕ МЕНЮ",summary,consoleMainOptions(cfg,c))
   switch choice{
   case 0:return
-  case 1:
-   if w.setupGuide(&cfg,c){applySettings(w,cfg,c)}
-  case 2:w.connectionsHub(&cfg,c)
-  case 3:w.behavior(&cfg);applySettings(w,cfg,c)
+  case 1:w.consoleAIHub(&cfg,c)
+  case 2:w.consoleFunctionsHub(&cfg,c)
+  case 3:w.consoleVKHub(&cfg,c)
   case 4:w.diagnosticsHub(cfg,c)
   case 5:w.panelMenu()
   case 6:w.maintenanceHub()
   case 7:fmt.Fprintln(w.out,vkSetupGuide(cfg.GroupID))
+  case 8:if w.setupGuide(&cfg,c){applySettings(w,cfg,c)}
   }
   w.pauseMenu()
  }
@@ -308,7 +293,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.11")
+ case "version","--version":fmt.Println("AI-bot Go v1.5.12")
  case "setup":
   if w.setupGuide(&cfg,catalog){applySettings(w,cfg,catalog)}
   fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,catalog))
