@@ -213,12 +213,13 @@ func mainBoard()string{
   {{"❓ Помощь","помощь"}},
  })
 }
-func aiBoard()string{
- return board([][]Btn{
-  {{"🤖 Выбрать модель","модели"}},
-  {{"✓ Автоматически","модель авто"}},
-  {{"🏠 Главное меню","меню"}},
- })
+func aiBoard(c *Catalog,cfg Config)string{
+ rows:=[][]Btn{}
+ if len(c.enabled(cfg))>0{
+  rows=append(rows,[]Btn{{"🤖 Выбрать модель","модели"}},[]Btn{{"✓ Автоматически","модель авто"}})
+ }
+ rows=append(rows,[]Btn{{"🏠 Главное меню","меню"}})
+ return board(rows)
 }
 func functionsBoard()string{
  return board([][]Btn{
@@ -323,7 +324,7 @@ func buttonsFor(command string,c *Catalog,cfg Config)string{
  case "меню","старт":return mainBoard()
  case "помощь","help","права","подключение","разрешения":return helpBoard()
  case "настройки":return personalBoard()
- case "ии":return aiBoard()
+ case "ии":return aiBoard(c,cfg)
  case "функции":return functionsBoard()
  case "модели":
   page:=1;if len(words)>1{if n,e:=strconv.Atoi(words[1]);e==nil{page=n}}
@@ -347,7 +348,7 @@ func buttonsFor(command string,c *Catalog,cfg Config)string{
  if words[0]=="модель"||words[0]=="поиск"||words[0]=="стиль"||words[0]=="контекст"||
   words[0]=="резерв"||words[0]=="сброс"||words[0]=="сбросить"||words[0]=="подтвердить"{
   if chat{return chatBoard()}
-  if words[0]=="модель"{return aiBoard()}
+  if words[0]=="модель"{return aiBoard(c,cfg)}
   if words[0]=="поиск"||words[0]=="стиль"||words[0]=="контекст"||words[0]=="резерв"{return functionsBoard()}
   return personalBoard()
  }
