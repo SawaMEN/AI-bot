@@ -54,12 +54,16 @@ func replyMainBoard()string{
   {{"⚙ Настройки","настройки","secondary"},{"❓ Помощь","помощь","secondary"}},
  })
 }
-func replyAIBoard()string{
- return replyKeyboard([][]replyButton{
-  {{"🤖 Выбрать модель","модели","primary"}},
-  {{"✓ Автоматически","модель авто","positive"}},
-  {{"🏠 Главное меню","меню","secondary"}},
- })
+func replyAIBoard(c *Catalog,cfg Config)string{
+ rows:=[][]replyButton{}
+ if len(c.enabled(cfg))>0{
+  rows=append(rows,
+   []replyButton{{"🤖 Выбрать модель","модели","primary"}},
+   []replyButton{{"✓ Автоматически","модель авто","positive"}},
+  )
+ }
+ rows=append(rows,[]replyButton{{"🏠 Главное меню","меню","secondary"}})
+ return replyKeyboard(rows)
 }
 func replyFunctionsBoard()string{
  return replyKeyboard([][]replyButton{
@@ -155,7 +159,7 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
  switch words[0]{
  case "меню","старт","вопрос":return replyMainBoard()
  case "настройки":return replyPersonalBoard()
- case "ии":return replyAIBoard()
+ case "ии":return replyAIBoard(c,cfg)
  case "функции":return replyFunctionsBoard()
  case "помощь","help","права","разрешения","подключение":return replyHelpBoard()
  case "модели":
@@ -167,7 +171,7 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
  }
  // When a setting changes, always return to the settings screen, not to
  // the same choice form. Users can change another parameter immediately.
- if words[0]=="модель"{return replyAIBoard()}
+ if words[0]=="модель"{return replyAIBoard(c,cfg)}
  for _,name:=range []string{"поиск","стиль","контекст","резерв"}{
   if words[0]==name{return replyFunctionsBoard()}
  }
