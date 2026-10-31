@@ -47,6 +47,23 @@ func modelAvailabilityExplanation(c *Catalog,cfg Config)string{
  if expired>0{
   fmt.Fprintf(&b," Требуют повторной проверки: %d.",expired)
  }
- b.WriteString("\nНажмите «Обновить список» позже. Для немедленной проверки на VDS: sudo aibot check-ai; ошибки: sudo aibot logs.")
+ b.WriteString("\n\nПРИЧИНЫ ПО МОДЕЛЯМ:")
+ shown:=0
+ for _,key:=range candidates{
+  status,ok:=c.health.lookup(cfg,key)
+  if !ok{
+   if shown<6{fmt.Fprintf(&b,"\n• %s: ещё не проверена",c.label(key));shown++}
+   continue
+  }
+  if status.Passed{continue}
+  if shown<6{
+   fmt.Fprintf(&b,"\n• %s: %s",c.label(key),modelFailureLabel(status.Reason))
+   shown++
+  }
+ }
+ if total:=pending+failed+english;total>shown{
+  fmt.Fprintf(&b,"\n…и ещё %d моделей.",total-shown)
+ }
+ b.WriteString("\n\nНа VDS: sudo aibot check-ai — проверить повторно и увидеть причины; sudo aibot logs — журнал.")
  return b.String()
 }
