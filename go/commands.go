@@ -94,6 +94,25 @@ func choiceIntro(s *Store,c *Catalog,cfg Config,peer,user int64,chat bool,name s
  }
  headline,ok:=captions[name]
  if !ok{return "Откройте настройки и выберите действие."}
+ current:=""
+ if chat{
+  pref:=s.getPref("chat",peer)
+  switch name{
+  case "поиска":current=readableSearch(pref.Search)
+  case "стиля":current=readableStyle(pref.Style)
+  case "контекста":if pref.Context>0{current=fmt.Sprintf("%d сообщений",pref.Context)}
+  case "резерва":current=readableFallback(pref.Fallback)
+  }
+ }else{
+  _,search,style,count,fallback:=s.effective(cfg,peer,user,c)
+  switch name{
+  case "поиска":current=readableSearch(search)
+  case "стиля":current=readableStyle(style)
+  case "контекста":current=fmt.Sprintf("%d сообщений",count)
+  case "резерва":current=switchLabel(fallback)
+  }
+ }
+ if current!=""{headline+="\n\nСейчас: "+current}
  return fmt.Sprintf("%s\n\nНастройка для %s.\nВыберите один из вариантов кнопкой ниже.",headline,scope)
 }
 
@@ -145,6 +164,10 @@ func processCommand(ctx context.Context,v *VK,s *Store,c *Catalog,cfg Config,pee
  case "настройки":return personalInfo(s,c,cfg,peer,user),true
  case "ии":return aiInfo(s,c,cfg,peer,user),true
  case "функции":return functionsInfo(s,c,cfg,peer,user),true
+ case "статистика":
+  if peer<2000000000{return "Статистика беседы доступна её администраторам в групповом чате.",true}
+  if !v.admin(ctx,peer,user){return "Статистику беседы может смотреть только её администратор.",true}
+  return s.vkUsageStats(cfg,c),true
  case "модели":
   page:=1;if len(args)>1{page,_=strconv.Atoi(args[1])}
   return listModels(c,cfg,page,false),true
