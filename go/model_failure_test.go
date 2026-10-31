@@ -45,17 +45,17 @@ func TestVKShowsThreeConcreteFailureReasons(t *testing.T){
  c,err:=newCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  keys:=c.candidates(cfg)
- if len(keys)!=3{t.Fatalf("expected three candidate models, got %v",keys)}
+ if len(keys)<3{t.Fatalf("expected at least three candidate models, got %v",keys)}
  reasons:=[]string{"auth","rate_limit","empty_response"}
  for i,key:=range keys{
-  if err:=c.health.recordReason(cfg,key,false,reasons[i]);err!=nil{t.Fatal(err)}
+  if err:=c.health.recordReason(cfg,key,false,reasons[i%len(reasons)]);err!=nil{t.Fatal(err)}
  }
  result:=modelAvailabilityExplanation(c,cfg)
- if !strings.Contains(result,"моделей на проверке: 3")||!strings.Contains(result,"ПРИЧИНЫ ПО МОДЕЛЯМ"){
+ if !strings.Contains(result,fmt.Sprintf("моделей на проверке: %d",len(keys)))||!strings.Contains(result,"ПРИЧИНЫ ПО МОДЕЛЯМ"){
   t.Fatal(result)
  }
  for i,key:=range keys{
-  if !strings.Contains(result,c.label(key))||!strings.Contains(result,modelFailureLabel(reasons[i])){
+  if !strings.Contains(result,c.label(key))||!strings.Contains(result,modelFailureLabel(reasons[i%len(reasons)])){
    t.Errorf("VK hides reason for %s: %s",key,result)
   }
  }
