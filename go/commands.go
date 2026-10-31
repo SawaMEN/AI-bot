@@ -173,6 +173,10 @@ func processCommand(ctx context.Context,v *VK,s *Store,c *Catalog,cfg Config,pee
   if chat&&!v.admin(ctx,peer,user){return "Изменять настройки беседы может только её администратор.",true}
   result:=cmdApply(s,c,cfg,scope,ident,[]string{"сброс"})
   if chat{return "✓ "+result+"\n\n"+chatInfo(s,c,cfg,peer),true}
+  if first=="модель"{return "✓ "+result+"\n\n"+aiInfo(s,c,cfg,peer,user),true}
+  if first=="поиск"||first=="стиль"||first=="контекст"||first=="резерв"{
+   return "✓ "+result+"\n\n"+functionsInfo(s,c,cfg,peer,user),true
+  }
   return "✓ "+result+"\n\n"+personalInfo(s,c,cfg,peer,user),true
  }
  for _,cmd:=range []string{"модель","поиск","стиль","контекст","резерв","сброс","сбросить"}{
