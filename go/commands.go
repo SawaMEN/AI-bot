@@ -11,32 +11,27 @@ func permissionHelp(cfg Config)string {
  return vkSetupGuide(cfg.GroupID)
 }
 func helpText()string {
- return "AI-bot — помощник в беседе ВКонтакте.\n\n"+
-  "КАК ПОЛЬЗОВАТЬСЯ\n"+
-  "• В беседе упомяните сообщество и задайте вопрос.\n"+
-  "• Для продолжения отвечайте на сообщение бота.\n"+
-  "• Напишите «бот меню», чтобы открыть понятные кнопки.\n\n"+
-  "НАСТРОЙКИ\n"+
-  "• «Мои настройки» — ваша модель, поиск, стиль и контекст.\n"+
-  "• «Настройки беседы» — общие параметры; изменяет только администратор.\n"+
-  "• «Выбрать ИИ» — только проверенные бесплатные модели.\n"+
-  "• Режим «Авто» выбирает рабочую модель сам и учитывает резерв.\n\n"+
-  "В личных сообщениях сообщества меню открывается словом «меню».\n"+
-  "Если бот не видит сообщения, нажмите «Права и подключение»."
+ return "КАК ПОЛЬЗОВАТЬСЯ\n\n"+
+  "Напишите вопрос обычным сообщением. В беседе упомяните бота или ответьте на его сообщение.\n\n"+
+  "🤖 ИИ — выбрать бесплатную модель, которая умеет отвечать на русском.\n"+
+  "🧰 Функции — поиск, стиль ответа, контекст и резерв.\n"+
+  "⚙ Настройки — личные предпочтения и сброс.\n\n"+
+  "Общие настройки беседы изменяет только её администратор."
 }
 func vkHome(s *Store,c *Catalog,cfg Config,peer,user int64)string{
- key,search,style,count,fallback:=s.effective(cfg,peer,user,c)
- model:="Пока идёт проверка доступности ИИ"
+ key,_,_,_,_:=s.effective(cfg,peer,user,c)
+ model:="Пока нет доступных моделей"
  if key!=""{model=c.label(key)}
- chatHint:="Общие параметры доступны в беседе"
- if peer<2000000000{chatHint="Для общей настройки откройте меню внутри беседы"}
- return fmt.Sprintf("AI-bot • ГЛАВНОЕ МЕНЮ\n\n"+
-  "ИИ: %s\n"+
-  "Работающих бесплатных моделей: %d\n"+
-  "Поиск: %s  •  Ответ: %s\n"+
-  "Контекст: до %d сообщений  •  Резерв: %s\n\n"+
-  "Выберите действие кнопкой ниже. Настройка займёт несколько нажатий, команды запоминать не нужно.\n%s",
-  model,len(c.enabled(cfg)),readableSearch(search),readableStyle(style),count,switchLabel(fallback),chatHint)
+ return fmt.Sprintf("ГЛАВНОЕ МЕНЮ\n\n🤖 ИИ: %s\n\nВыберите раздел:\n• ИИ — бесплатные русскоязычные модели\n• Функции — поиск и параметры ответов\n• Настройки — личные предпочтения",model)
+}
+func aiInfo(s *Store,c *Catalog,cfg Config,peer,user int64)string{
+ key,_,_,_,_:=s.effective(cfg,peer,user,c)
+ if key==""{return "ИИ\n\nСейчас нет доступных моделей. Попробуйте позже."}
+ return fmt.Sprintf("ИИ\n\nТекущая модель: %s\nДоступно: %d\n\nВыберите модель или оставьте автоматический выбор.",c.label(key),len(c.enabled(cfg)))
+}
+func functionsInfo(s *Store,c *Catalog,cfg Config,peer,user int64)string{
+ _,search,style,count,fallback:=s.effective(cfg,peer,user,c)
+ return fmt.Sprintf("ФУНКЦИИ\n\nПоиск: %s\nОтвет: %s\nКонтекст: %d сообщений\nРезерв: %s\n\nВыберите функцию кнопкой ниже.",readableSearch(search),readableStyle(style),count,switchLabel(fallback))
 }
 
 func readableSearch(v string)string{
@@ -50,7 +45,7 @@ func readableStyle(v string)string{
 }
 func listModels(c *Catalog,cfg Config,page int,chat bool)string{
  allowed:=c.enabled(cfg)
- if len(allowed)==0{return "Пока нет подтверждённых работающих моделей.\n\n"+modelAvailabilityExplanation(c,cfg)}
+ if len(allowed)==0{return "Сейчас нет доступных бесплатных моделей. Список обновится автоматически."}
  maxPage:=(len(allowed)+2)/3
  if page<1{page=1};if page>maxPage{page=maxPage}
  var b strings.Builder
@@ -148,6 +143,8 @@ func processCommand(ctx context.Context,v *VK,s *Store,c *Catalog,cfg Config,pee
  case "помощь","help":return helpText(),true
  case "права","разрешения","подключение":return permissionHelp(cfg),true
  case "настройки":return personalInfo(s,c,cfg,peer,user),true
+ case "ии":return aiInfo(s,c,cfg,peer,user),true
+ case "функции":return functionsInfo(s,c,cfg,peer,user),true
  case "модели":
   page:=1;if len(args)>1{page,_=strconv.Atoi(args[1])}
   return listModels(c,cfg,page,false),true
