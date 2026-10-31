@@ -15,7 +15,7 @@ func replyGroupMainBoard()string{
  return replyKeyboard([][]replyButton{
   {{"🤖 ИИ беседы","диалог модели 1","primary"}},
   {{"🧰 Функции беседы","диалог","primary"}},
-  {{"❓ Помощь","помощь","secondary"}},
+  {{"📊 Статистика","статистика","secondary"},{"❓ Помощь","помощь","secondary"}},
  })
 }
 
@@ -25,7 +25,7 @@ func replyGroupChatBoard()string{
   {{"🔎 Поиск","диалог выбор поиска","primary"},{"✍ Стиль","диалог выбор стиля","primary"}},
   {{"🧠 Контекст","диалог выбор контекста","secondary"},{"🔄 Резерв","диалог выбор резерва","secondary"}},
   {{"↺ Сбросить настройки беседы","диалог выбор сброса","negative"}},
-  {{"🏠 Главное меню","меню","positive"}},
+  {{"📊 Статистика","статистика","secondary"},{"🏠 Главное меню","меню","positive"}},
  })
 }
 
@@ -88,7 +88,7 @@ func replyGroupButtonsFor(command string,c *Catalog,cfg Config)string{
  fields:=strings.Fields(strings.ToLower(command))
  if len(fields)==0{return replyGroupMainBoard()}
  switch fields[0]{
- case "меню","старт","вопрос","помощь","help":
+ case "меню","старт","вопрос","помощь","help","статистика":
   return replyGroupMainBoard()
  case "диалог":
   if len(fields)==1{return replyGroupChatBoard()}
@@ -119,7 +119,7 @@ func vkGroupReplyCommand(raw json.RawMessage)string{
  words:=strings.Fields(strings.ToLower(command))
  if len(words)==0{return ""}
  switch words[0]{
- case "меню","старт","помощь","вопрос","ии","функции","настройки","модели":
+ case "меню","старт","помощь","вопрос","ии","функции","настройки","модели","статистика":
   return command
  case "диалог":
   if len(words)==1{return command}
