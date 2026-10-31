@@ -104,6 +104,22 @@ func (s *Store) counts(peer,sender int64)(int,int,int){
  if err!=nil{return int(^uint(0)>>1),int(^uint(0)>>1),int(^uint(0)>>1)}
  return total,chat,user
 }
+// reserveQuota atomically counts and consumes a free-tier request. Concurrent
+// workers must never both observe the same final remaining slot.
+func(s *Store) reserveQuota(cfg Config,peer,sender int64)(bool,error){
+ tx,err:=s.DB.Begin();if err!=nil{return false,err}
+ defer tx.Rollback()
+ cutoff:=time.Now().Add(-time.Hour).Unix()
+ var total,chat,user int
+ err=tx.QueryRow(`SELECT COUNT(*),
+  COALESCE(SUM(CASE WHEN peer_id=? THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN sender_id=? THEN 1 ELSE 0 END),0)
+  FROM calls WHERE created_at>=?`,peer,sender,cutoff).Scan(&total,&chat,&user)
+ if err!=nil{return false,err}
+ if total>=cfg.MaxRequestsHour||chat>=cfg.MaxChatRequestsHour||user>=cfg.MaxUserRequestsHour{return false,nil}
+ if _,err=tx.Exec("INSERT INTO calls(created_at,peer_id,sender_id) VALUES(?,?,?)",time.Now().Unix(),peer,sender);err!=nil{return false,err}
+ return true,tx.Commit()
+}
 func(s *Store) track(peer,sender int64)error{
  _,err:=s.DB.Exec("INSERT INTO calls(created_at,peer_id,sender_id) VALUES(?,?,?)",time.Now().Unix(),peer,sender)
  return err
