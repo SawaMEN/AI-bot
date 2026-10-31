@@ -41,13 +41,16 @@ func openStore(path string)(*Store,error){
   "CREATE TABLE IF NOT EXISTS meta(name TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)",
  }
  for _,query:=range schema{if _,err=db.Exec(query);err!=nil{db.Close();return nil,fmt.Errorf("SQLite: %w",err)}}
- for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"}}{
+ for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"},{"pending","peer_id","INTEGER NOT NULL DEFAULT 0"},{"pending","lease_until","INTEGER NOT NULL DEFAULT 0"}}{
   rows,err:=db.Query("PRAGMA table_info("+table.table+")");if err!=nil{db.Close();return nil,err}
   exists:=false;for rows.Next(){var index,notnull,pk int;var name,kind string;var d sql.NullString;if err=rows.Scan(&index,&name,&kind,&notnull,&d,&pk);err!=nil{break};if name==table.column{exists=true}}
   rows.Close();if err!=nil{db.Close();return nil,err}
   if !exists{if _,err=db.Exec("ALTER TABLE "+table.table+" ADD COLUMN "+table.column+" "+table.definition);err!=nil{db.Close();return nil,err}}
  }
  _,err=db.Exec("CREATE INDEX IF NOT EXISTS idx_calls_at ON calls(created_at)");if err!=nil{db.Close();return nil,err}
+ // Backfill already queued messages without deleting history or responses.
+ if _,err=db.Exec("UPDATE pending SET peer_id=CAST(json_extract(payload,'$.peer_id') AS INTEGER) WHERE peer_id=0 AND json_valid(payload)");err!=nil{db.Close();return nil,err}
+ if _,err=db.Exec("CREATE INDEX IF NOT EXISTS idx_pending_peer_order ON pending(peer_id,created_at,event_id)");err!=nil{db.Close();return nil,err}
  return &Store{db},nil
 }
 func (s *Store) close(){s.DB.Close()}
@@ -71,8 +74,8 @@ func (s *Store) recordAndQueue(m VKMessage,mentioned bool)(bool,error){
    m.ReplyMessage=&VKMessage{FromID:m.ReplyMessage.FromID}
   }
   payload,err:=json.Marshal(m);if err!=nil{return false,err}
-  if _,err=tx.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",
-   m.EventID(),string(payload),time.Now().Unix());err!=nil{return false,err}
+  if _,err=tx.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts,peer_id) VALUES(?,?,?,0,?)",
+   m.EventID(),string(payload),time.Now().Unix(),m.PeerID);err!=nil{return false,err}
  }
  if err=tx.Commit();err!=nil{return false,err}
  return inserted==1,nil
@@ -131,7 +134,7 @@ func(s *Store) effective(cfg Config,peer,sender int64,c *Catalog)(string,string,
 }
 func(s *Store) enqueue(m VKMessage)error{
  blob,_:=json.Marshal(m)
- _,err:=s.DB.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts) VALUES(?,?,?,0)",m.EventID(),string(blob),time.Now().Unix());return err
+ _,err:=s.DB.Exec("INSERT OR IGNORE INTO pending(event_id,payload,created_at,attempts,peer_id) VALUES(?,?,?,0,?)",m.EventID(),string(blob),time.Now().Unix(),m.PeerID);return err
 }
 func(s *Store) nextPending()(VKMessage,int,error){
  var msg VKMessage;var id,data string;var attempts int
@@ -148,6 +151,34 @@ func(s *Store) nextPending()(VKMessage,int,error){
  }
  return msg,attempts,nil
 }
+// claimPending leases the oldest ready job from an otherwise idle peer. A
+// transaction makes selection + leasing atomic across concurrent workers.
+// A failed worker releases its lease via retry; a killed process is reclaimed
+// after ten minutes without losing pending state.
+func(s *Store) claimPending()(VKMessage,int,error){
+ var m VKMessage
+ tx,err:=s.DB.Begin();if err!=nil{return m,0,err}
+ defer tx.Rollback()
+ now:=time.Now().Unix()
+ var id,payload string
+ var attempts int
+ err=tx.QueryRow(`SELECT p.event_id,p.payload,p.attempts
+  FROM pending p WHERE p.retry_after<=? AND p.lease_until<=?
+  AND NOT EXISTS (
+   SELECT 1 FROM pending older WHERE older.peer_id=p.peer_id AND older.event_id<>p.event_id
+   AND (older.created_at<p.created_at OR (older.created_at=p.created_at AND older.event_id<p.event_id))
+  )
+  ORDER BY p.created_at,p.event_id LIMIT 1`,now,now).Scan(&id,&payload,&attempts)
+ if err!=nil{return m,0,err}
+ if err=json.Unmarshal([]byte(payload),&m);err!=nil||!m.Valid()||m.EventID()!=id{
+  if _,e:=tx.Exec("DELETE FROM pending WHERE event_id=?",id);e!=nil{return m,0,e}
+  if e:=tx.Commit();e!=nil{return m,0,e}
+  return VKMessage{},0,sql.ErrNoRows
+ }
+ if _,err=tx.Exec("UPDATE pending SET lease_until=? WHERE event_id=?",now+600,id);err!=nil{return m,0,err}
+ if err=tx.Commit();err!=nil{return m,0,err}
+ return m,attempts,nil
+}
 func(s *Store) finish(m VKMessage)error{
  _,err:=s.DB.Exec("DELETE FROM pending WHERE event_id=?",m.EventID())
  return err
@@ -155,7 +186,7 @@ func(s *Store) finish(m VKMessage)error{
 func(s *Store) retry(m VKMessage)error{
  // Gradual backoff stops transient network failures from blocking every chat.
  // Pending messages remain retriable until the configured retention limit.
- _,err:=s.DB.Exec("UPDATE pending SET attempts=attempts+1, retry_after=? WHERE event_id=?",
+ _,err:=s.DB.Exec("UPDATE pending SET attempts=attempts+1, retry_after=?, lease_until=0 WHERE event_id=?",
   time.Now().Add(retryBackoff(s.attempts(m)+1)).Unix(),m.EventID())
  return err
 }
