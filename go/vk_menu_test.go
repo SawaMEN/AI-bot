@@ -59,7 +59,7 @@ func TestVKHomeAndSettingsNavigation(t *testing.T){
   if !ok||!strings.Contains(txt,tc.want){t.Fatalf("%q => %q (ok=%v), missing %q",tc.cmd,txt,ok,tc.want)}
  }
  if pref:=store.getPref("user",user);pref.Search!="off"{t.Fatalf("personal preference wasn't saved: %+v",pref)}
- if raw:=buttonsFor("поиск выкл",c,cfg);!strings.Contains(raw,"Мои настройки")&& !strings.Contains(raw,"Модель"){t.Fatal("post-selection keyboard did not return to settings")}
+ if raw:=buttonsFor("поиск выкл",c,cfg);!strings.Contains(raw,"Стиль ответа"){t.Fatal("post-selection keyboard did not return to the functions section")}
  if raw:=buttonsFor("выбор поиска",c,cfg);!strings.Contains(raw,"Авто"){t.Fatal("search choices missing")}
 }
 func TestVKPrivateMenuDoesNotRequireMention(t *testing.T){
@@ -132,5 +132,5 @@ func TestVKMenuModelPagesRetainAutoAndBack(t *testing.T){
  raw:=modelBoard(c,cfg,1,false)
  if err:=json.Unmarshal([]byte(raw),&struct{Buttons *[][]struct{Action struct{Label string `json:"label"`;Payload string `json:"payload"`} `json:"action"`} `json:"buttons"`}{Buttons:&all});err!=nil{t.Fatal(err)}
  joined:=raw
- if !strings.Contains(joined,"модель авто")||!strings.Contains(joined,"настройки"){t.Fatal("must allow automatic choice and navigation back")}
+ if !strings.Contains(joined,"модель авто")||!strings.Contains(joined,"ии"){t.Fatal("must allow automatic choice and navigation back")}
 }

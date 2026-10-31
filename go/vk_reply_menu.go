@@ -45,24 +45,44 @@ func replyKeyboard(rows [][]replyButton) string {
  return string(encoded)
 }
 
+// Separate the AI catalogue from assistant tools and personal settings.
 func replyMainBoard()string{
  return replyKeyboard([][]replyButton{
   {{"💬 Задать вопрос","вопрос","positive"}},
-  {{"🤖 Выбрать ИИ","модели","primary"},{"⚙ Мои настройки","настройки","primary"}},
-  {{"❓ Помощь","помощь","secondary"}},
+  {{"🤖 ИИ","ии","primary"}},
+  {{"🧰 Функции","функции","primary"}},
+  {{"⚙ Настройки","настройки","secondary"},{"❓ Помощь","помощь","secondary"}},
+ })
+}
+func replyAIBoard(c *Catalog,cfg Config)string{
+ rows:=[][]replyButton{}
+ if len(c.enabled(cfg))>0{
+  rows=append(rows,
+   []replyButton{{"🤖 Выбрать модель","модели","primary"}},
+   []replyButton{{"✓ Автоматически","модель авто","positive"}},
+  )
+ }
+ rows=append(rows,[]replyButton{{"🏠 Главное меню","меню","secondary"}})
+ return replyKeyboard(rows)
+}
+func replyFunctionsBoard()string{
+ return replyKeyboard([][]replyButton{
+  {{"🔎 Поиск","выбор поиска","primary"},{"✍ Стиль ответа","выбор стиля","primary"}},
+  {{"🧠 Контекст","выбор контекста","secondary"},{"🔄 Резерв","выбор резерва","secondary"}},
+  {{"🏠 Главное меню","меню","positive"}},
  })
 }
 func replyPersonalBoard()string{
  return replyKeyboard([][]replyButton{
-  {{"🤖 Модель","модели","primary"},{"🔎 Поиск","выбор поиска","primary"}},
-  {{"✍ Стиль","выбор стиля","secondary"},{"🧠 Контекст","выбор контекста","secondary"}},
-  {{"🔄 Резерв","выбор резерва","secondary"},{"↺ Сброс","выбор сброса","negative"}},
+  {{"🤖 Настроить ИИ","ии","primary"}},
+  {{"🧰 Настроить функции","функции","primary"}},
+  {{"↺ Сбросить мои настройки","выбор сброса","negative"}},
   {{"🏠 Главное меню","меню","positive"}},
  })
 }
 func replyHelpBoard()string{
  return replyKeyboard([][]replyButton{
-  {{"⚙ Настройки","настройки","primary"},{"🤖 Выбрать ИИ","модели","primary"}},
+  {{"🤖 ИИ","ии","primary"},{"🧰 Функции","функции","primary"}},
   {{"🏠 Главное меню","меню","positive"}},
  })
 }
@@ -75,8 +95,8 @@ func replyModelBoard(c *Catalog,cfg Config,page int)string{
  rows:=make([][]replyButton,0,7)
  if len(allowed)==0{
   return replyKeyboard([][]replyButton{
-   {{"↻ Обновить список","модели","primary"}},
-   {{"⚙ Настройки","настройки","secondary"},{"🏠 Меню","меню","positive"}},
+   {{"← К разделу ИИ","ии","secondary"}},
+   {{"🏠 Главное меню","меню","positive"}},
   })
  }
  for i:=(page-1)*3;i<min(page*3,len(allowed));i++{
@@ -89,7 +109,7 @@ func replyModelBoard(c *Catalog,cfg Config,page int)string{
  if page<maxPage{navigation=append(navigation,replyButton{"Далее ▶","модели "+strconv.Itoa(page+1),"secondary"})}
  if len(navigation)>0{rows=append(rows,navigation)}
  rows=append(rows,[]replyButton{{"✓ Автоматически","модель авто","positive"}})
- rows=append(rows,[]replyButton{{"⚙ Настройки","настройки","secondary"},{"🏠 Меню","меню","secondary"}})
+ rows=append(rows,[]replyButton{{"← Раздел ИИ","ии","secondary"},{"🏠 Меню","меню","secondary"}})
  return replyKeyboard(rows)
 }
 func replyChoiceBoard(name string,cfg Config)string{
@@ -128,7 +148,7 @@ func replyChoiceBoard(name string,cfg Config)string{
  default:return replyPersonalBoard()
  }
  if name!="сброса"{
-  rows=append(rows,[]replyButton{{"⬅ Назад","настройки","secondary"},{"🏠 Меню","меню","secondary"}})
+  rows=append(rows,[]replyButton{{"⬅ К функциям","функции","secondary"},{"🏠 Меню","меню","secondary"}})
  }
  return replyKeyboard(rows)
 }
@@ -139,6 +159,8 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
  switch words[0]{
  case "меню","старт","вопрос":return replyMainBoard()
  case "настройки":return replyPersonalBoard()
+ case "ии":return replyAIBoard(c,cfg)
+ case "функции":return replyFunctionsBoard()
  case "помощь","help","права","разрешения","подключение":return replyHelpBoard()
  case "модели":
   page:=1
@@ -149,7 +171,11 @@ func replyButtonsFor(command string,c *Catalog,cfg Config)string{
  }
  // When a setting changes, always return to the settings screen, not to
  // the same choice form. Users can change another parameter immediately.
- for _,name:=range []string{"модель","поиск","стиль","контекст","резерв","сброс","сбросить","подтвердить"}{
+ if words[0]=="модель"{return replyAIBoard(c,cfg)}
+ for _,name:=range []string{"поиск","стиль","контекст","резерв"}{
+  if words[0]==name{return replyFunctionsBoard()}
+ }
+ for _,name:=range []string{"сброс","сбросить","подтвердить"}{
   if words[0]==name{return replyPersonalBoard()}
  }
  return replyMainBoard()
@@ -177,7 +203,7 @@ func vkReplyCommand(payload json.RawMessage)string{
  fields:=strings.Fields(strings.ToLower(command))
  if len(fields)==0{return ""}
  switch fields[0]{
- case "меню","старт","вопрос","помощь","настройки","права","модели","модель",
+ case "меню","старт","вопрос","помощь","настройки","права","модели","модель","ии","функции",
   "выбор","поиск","стиль","контекст","резерв","сброс","сбросить","подтвердить":
   return command
  }
@@ -188,7 +214,9 @@ func vkReplyLabel(text string)string{
  switch strings.ToLower(strings.TrimSpace(text)){
  case "🏠 меню","🏠 главное меню":return "меню"
  case "⚙ мои настройки","⚙ настройки":return "настройки"
- case "🤖 выбрать ии","🤖 модель":return "модели"
+ case "🤖 выбрать ии","🤖 модель","🤖 выбрать модель":return "модели"
+ case "🤖 ии","🤖 настроить ии":return "ии"
+ case "🧰 функции","🧰 настроить функции":return "функции"
  case "❓ помощь":return "помощь"
  case "💬 задать вопрос":return "вопрос"
  case "🔎 поиск":return "выбор поиска"

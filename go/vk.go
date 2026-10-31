@@ -167,7 +167,7 @@ func questionFor(cfg Config,m VKMessage) (string,bool) {
  if m.PeerID<2000000000&&m.FromID>0 {
   words:=strings.Fields(strings.ToLower(text))
   if len(words)>0 {
-   for _,command:=range []string{"меню","старт","помощь","help","настройки","модели","модель",
+   for _,command:=range []string{"меню","старт","помощь","help","настройки","ии","функции","модели","модель",
     "выбор","вопрос","поиск","стиль","контекст","резерв","сброс","права","разрешения","подключение"} {
     if words[0]==command{return text,true}
    }
@@ -207,31 +207,48 @@ func answerBoard()string{
 // Buttons are stateless callback commands, so the menus survive bot restarts.
 func mainBoard()string{
  return board([][]Btn{
-  {{"⚙ Мои настройки","настройки"},{"👥 Для беседы","диалог"}},
-  {{"🤖 Выбрать ИИ","модели"},{"ℹ Помощь","помощь"}},
-  {{"🔧 Подключение ВК","права"}},
+  {{"🤖 ИИ","ии"}},
+  {{"🧰 Функции","функции"}},
+  {{"⚙ Настройки","настройки"},{"👥 Для беседы","диалог"}},
+  {{"❓ Помощь","помощь"}},
+ })
+}
+func aiBoard(c *Catalog,cfg Config)string{
+ rows:=[][]Btn{}
+ if len(c.enabled(cfg))>0{
+  rows=append(rows,[]Btn{{"🤖 Выбрать модель","модели"}},[]Btn{{"✓ Автоматически","модель авто"}})
+ }
+ rows=append(rows,[]Btn{{"🏠 Главное меню","меню"}})
+ return board(rows)
+}
+func functionsBoard()string{
+ return board([][]Btn{
+  {{"🔎 Поиск","выбор поиска"},{"✍ Стиль ответа","выбор стиля"}},
+  {{"🧠 Контекст","выбор контекста"},{"🔄 Резерв","выбор резерва"}},
+  {{"🏠 Главное меню","меню"}},
  })
 }
 func personalBoard()string{
  return board([][]Btn{
-  {{"🤖 Модель","модели"},{"🔎 Поиск","выбор поиска"}},
-  {{"✍ Стиль","выбор стиля"},{"🧠 Контекст","выбор контекста"}},
-  {{"🔄 Резерв","выбор резерва"},{"↺ Сброс","выбор сброса"}},
+  {{"🤖 ИИ","ии"}},
+  {{"🧰 Функции","функции"}},
+  {{"↺ Сбросить мои настройки","выбор сброса"}},
   {{"⌂ Главное меню","меню"},{"👥 Для беседы","диалог"}},
  })
 }
 func chatBoard()string{
  return board([][]Btn{
-  {{"🤖 Модель беседы","диалог модели 1"},{"🔎 Поиск","диалог выбор поиска"}},
-  {{"✍ Стиль","диалог выбор стиля"},{"🧠 Контекст","диалог выбор контекста"}},
-  {{"🔄 Резерв","диалог выбор резерва"},{"↺ Сброс","диалог выбор сброса"}},
+  {{"🤖 Модель беседы","диалог модели 1"}},
+  {{"🔎 Поиск","диалог выбор поиска"},{"✍ Стиль","диалог выбор стиля"}},
+  {{"🧠 Контекст","диалог выбор контекста"},{"🔄 Резерв","диалог выбор резерва"}},
+  {{"↺ Сброс беседы","диалог выбор сброса"}},
   {{"⌂ Главное меню","меню"},{"⚙ Мои настройки","настройки"}},
  })
 }
 func helpBoard()string{
  return board([][]Btn{
-  {{"⌂ Главное меню","меню"},{"⚙ Настройки","настройки"}},
-  {{"🔧 Права и подключение","права"}},
+  {{"🤖 ИИ","ии"},{"🧰 Функции","функции"}},
+  {{"⌂ Главное меню","меню"}},
  })
 }
 func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
@@ -243,7 +260,7 @@ func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
  prefix:="";back:="настройки"
  if chat{prefix="диалог ";back="диалог"}
  if len(allowed)==0{
-  return board([][]Btn{{{"↻ Обновить список",func()string{if chat{return "диалог модели 1"};return "модели"}()}},{{"← Назад",back},{"🏠 Меню","меню"}}})
+  return board([][]Btn{{{"← Назад",back},{"🏠 Меню","меню"}}})
  }
  for i:=(page-1)*3;i<min(page*3,len(allowed));i++{
   label:=c.label(allowed[i])
@@ -256,7 +273,8 @@ func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
  if page<maxPage{nav=append(nav,Btn{"Далее ▶",route+strconv.Itoa(page+1)})}
  if len(nav)>0{rows=append(rows,nav)}
  rows=append(rows,[]Btn{{"✓ Авто • рекомендуется",prefix+"модель авто"}})
- rows=append(rows,[]Btn{{"← К настройкам",back}})
+ if !chat{back="ии"}
+ rows=append(rows,[]Btn{{"← Назад",back}})
  return board(rows)
 }
 func choiceBoard(prefix,name string,cfg Config)string{
@@ -295,7 +313,7 @@ func choiceBoard(prefix,name string,cfg Config)string{
   if prefix=="диалог "{return chatBoard()}
   return personalBoard()
  }
- back:="настройки";if prefix=="диалог "{back="диалог"}
+ back:="функции";if prefix=="диалог "{back="диалог"}
  if name!="сброса"{rows=append(rows,[]Btn{{"← Назад к настройкам",back}})}
  return board(rows)
 }
@@ -306,6 +324,8 @@ func buttonsFor(command string,c *Catalog,cfg Config)string{
  case "меню","старт":return mainBoard()
  case "помощь","help","права","подключение","разрешения":return helpBoard()
  case "настройки":return personalBoard()
+ case "ии":return aiBoard(c,cfg)
+ case "функции":return functionsBoard()
  case "модели":
   page:=1;if len(words)>1{if n,e:=strconv.Atoi(words[1]);e==nil{page=n}}
   return modelBoard(c,cfg,page,false)
@@ -328,6 +348,8 @@ func buttonsFor(command string,c *Catalog,cfg Config)string{
  if words[0]=="модель"||words[0]=="поиск"||words[0]=="стиль"||words[0]=="контекст"||
   words[0]=="резерв"||words[0]=="сброс"||words[0]=="сбросить"||words[0]=="подтвердить"{
   if chat{return chatBoard()}
+  if words[0]=="модель"{return aiBoard(c,cfg)}
+  if words[0]=="поиск"||words[0]=="стиль"||words[0]=="контекст"||words[0]=="резерв"{return functionsBoard()}
   return personalBoard()
  }
  if chat{return chatBoard()}

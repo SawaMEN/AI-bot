@@ -68,7 +68,26 @@ func (c *Catalog) modelAllowedID(provider,id string) bool {
 // probe and response guard perform the functional language check.
 func russianCandidate(id string)bool{
  name:=strings.ToLower(id)
- for _,family:=range []string{"gpt-oss","gemini","qwen","glm-","deepseek","mistral","gemma","llama","kimi","minimax","nemotron"}{
+ // Do not treat embedding, guardrail, audio, moderation or single-purpose
+ // classifier models as conversational Russian assistants, even if the
+ // publisher/model name contains a supported multilingual family.
+ for _,excluded:=range []string{
+  "embedding","embed-","rerank","moderation","safety","guard","classifi",
+  "transcrib","whisper","speech","audio-only","-tts","text-to-speech",
+  "ocr-only","image-generation","/flux-","/stable-diffusion","/jina-embeddings",
+ }{
+  if strings.Contains(name,excluded){return false}
+ }
+ // Explicit model-family allowlist: the dynamic zero-price directories can
+ // contain hundreds of unknown or specialist models. Only known multilingual
+ // text families are eligible for the real authenticated Russian probe.
+ for _,family:=range []string{
+  "gpt-oss","gemini","qwen","glm-","deepseek","mistral","mixtral",
+  "gemma","llama","kimi","minimax","nemotron","command-r","aya-",
+  "phi-4","phi-3","internlm","hunyuan","ernie","doubao","yi-",
+  "baichuan","step-","granite","olmo","exaone","ling-","seed-oss",
+  "dots3","dots-","inkling","xing4","telechat","falcon3",
+ }{
   if strings.Contains(name,family){return true}
  }
  return false
@@ -103,7 +122,15 @@ func (c *Catalog) candidates(cfg Config) []string {
   if auto {
    if spec.FreePolicy=="curated"{for _,m:=range spec.Models{add(m[0])}
    }else{
-    for _,m:=range c.verified[name]{add(m.ID)}
+    // Only a bounded set of dynamically discovered zero-price, likely
+    // multilingual models is probed at once. A huge model directory must not
+    // consume the entire free API quota simply by connecting a provider.
+    checked:=0
+    for _,m:=range c.verified[name]{
+     if checked>=30{break}
+     if !c.modelAllowedID(name,m.ID){continue}
+     add(m.ID);checked++
+    }
    }
   }
  }

@@ -76,11 +76,11 @@ func TestVKMissingModelStatusExplainsPendingVersusFailed(t *testing.T){
  if !strings.Contains(failed,"Ошибки API")||!strings.Contains(failed,"Ещё не проверено"){
   t.Fatalf("failed API not distinguished: %s",failed)
  }
- if got:=listModels(c,cfg,1,false);!strings.Contains(got,"Ещё не проверено"){
+ if got:=listModels(c,cfg,1,false);!strings.Contains(got,"Сейчас нет доступных")||strings.Contains(got,"API"){
   t.Fatalf("VK model list hides reason: %s",got)
  }
- if got:=replyModelBoard(c,cfg,1);!strings.Contains(got,"Обновить список"){
-  t.Fatal("no one-tap refresh when models are pending")
+ if got:=replyModelBoard(c,cfg,1);strings.Contains(got,"Обновить список")||strings.Contains(got,"Автоматически"){
+  t.Fatal("unavailable models and manual refresh must not be offered in VK")
  }
 }
 
