@@ -80,7 +80,9 @@ func TestVKReplyPayloadRoutesWithoutSendingToAI(t *testing.T){
 func TestVKReplyButtonsDoNotHijackUnmentionedGroupMessages(t *testing.T){
  cfg:=testCfg()
  button:=VKMessage{PeerID:2000000001,FromID:42,ID:1,Text:"🤖 Выбрать ИИ",Payload:json.RawMessage(`{"aibot":1,"command":"модели"}`)}
- if command,ok:=questionFor(cfg,button);ok{t.Fatalf("group payload must not override mention rule: %q",command)}
+ if command,ok:=questionFor(cfg,button);!ok||command!="модели"{t.Fatalf("group keyboard payload did not navigate: %q %v",command,ok)}
+ button.Payload=nil
+ if command,ok:=questionFor(cfg,button);ok{t.Fatalf("unmentioned plain group text must be ignored: %q",command)}
  button.Text="[club123|Бот] меню"
  cfg.GroupID=123
  if command,ok:=questionFor(cfg,button);!ok||command!="меню"{t.Fatalf("group mention broken: %q %v",command,ok)}
@@ -88,12 +90,13 @@ func TestVKReplyButtonsDoNotHijackUnmentionedGroupMessages(t *testing.T){
 
 func TestVKPeerKeyboardDoesNotAffectGroup(t *testing.T){
  cfg:=testCfg();c,_:=newCatalog()
- var persistent,inline replyKeyboardJSON
- if err:=json.Unmarshal([]byte(keyboardForPeer(42,"настройки",c,cfg)),&persistent);err!=nil{t.Fatal(err)}
- if err:=json.Unmarshal([]byte(keyboardForPeer(2000000001,"настройки",c,cfg)),&inline);err!=nil{t.Fatal(err)}
- if persistent.Inline||!inline.Inline{t.Fatalf("private and group keyboards switched: %v %v",persistent.Inline,inline.Inline)}
+ var personal,group replyKeyboardJSON
+ if err:=json.Unmarshal([]byte(keyboardForPeer(42,"настройки",c,cfg)),&personal);err!=nil{t.Fatal(err)}
+ if err:=json.Unmarshal([]byte(keyboardForPeer(2000000001,"настройки",c,cfg)),&group);err!=nil{t.Fatal(err)}
+ if personal.Inline||group.Inline||personal.OneTime||group.OneTime{t.Fatalf("both keyboards must stay at bottom: %v %v",personal,group)}
  if !strings.Contains(answerKeyboardForPeer(42),`"inline":false`){t.Fatal("private AI answer should keep bottom keyboard")}
- if !strings.Contains(answerKeyboardForPeer(2000000001),`"inline":true`){t.Fatal("group answer should have attached menu")}
+ if !strings.Contains(answerKeyboardForPeer(2000000001),`"inline":false`){t.Fatal("group AI answer should keep bottom keyboard")}
+ if !strings.Contains(answerKeyboardForPeer(2000000001),"ИИ беседы"){t.Fatal("group keyboard must only contain shared settings")}
 }
 
 func TestVKTextKeyboardSentViaMessagesSend(t *testing.T){
