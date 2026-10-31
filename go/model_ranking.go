@@ -81,7 +81,6 @@ func(s *Store) rankedModels(allowed []string,question string)[]string{
 func(s *Store) explicitAIModel(cfg Config,peer,user int64,c *Catalog)bool{
  available:=map[string]bool{}
  for _,key:=range c.enabled(cfg){available[key]=true}
- if available[cfg.DefaultModel]{return true}
  if available[s.getPref("user",user).Model]{return true}
  if peer>=2000000000&&available[s.getPref("chat",peer).Model]{return true}
  return false
