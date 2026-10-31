@@ -49,8 +49,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  // Respect explicit user/chat/server model preferences. Otherwise choose
  // based on observed success rate, response latency and query complexity.
  if !b.store.explicitAIModel(b.cfg,m.PeerID,m.FromID,b.catalog){
-  ranked:=b.store.rankedModels(b.catalog.enabled(b.cfg),question)
-  if len(ranked)>0{model=ranked[0]}
+  model=b.store.chooseAutoModel(b.cfg,b.catalog.enabled(b.cfg),question)
  }
  if model==""{return b.send(ctx,m,"Сейчас нет доступного ИИ. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))}
  total,chat,user:=b.store.counts(m.PeerID,m.FromID)
