@@ -38,6 +38,7 @@ func TestModelHealthConcurrentFailuresDoNotEraseSuccesses(t *testing.T){
 
 func TestEnabledProviderWithoutManualSelectionUsesAutomaticCatalog(t *testing.T){
  cfg:=testCfg()
+ cfg.Providers=map[string]ProviderConfig{"groq":cfg.Providers["groq"]}
  cfg.EnabledModels=nil
  cfg.AutoModelsProviders=nil
  c,err:=newCatalog();if err!=nil{t.Fatal(err)}
