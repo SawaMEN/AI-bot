@@ -34,7 +34,8 @@ func TestModelComplexityAndManualOverrides(t *testing.T){
  cfg.DefaultModel="groq:openai/gpt-oss-20b"
  s,err:=openStore(filepath.Join(t.TempDir(),"prefs.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
- if !s.explicitAIModel(cfg,42,42,c){t.Fatal("server default must be respected")}
+ if s.explicitAIModel(cfg,42,42,c){t.Fatal("server default must not disable automatic choice")}
+ if got:=s.chooseAutoModel(cfg,c.enabled(cfg),"Привет");got!=cfg.DefaultModel{t.Fatalf("initial default preference ignored: %s",got)}
  cfg.DefaultModel=""
  if s.explicitAIModel(cfg,42,42,c){t.Fatal("auto mode ignored")}
  if err:=s.setPref("user",42,"model","groq:openai/gpt-oss-20b");err!=nil{t.Fatal(err)}
