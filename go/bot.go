@@ -215,8 +215,9 @@ func runBot(ctx context.Context,cfg Config)error{
  var workers sync.WaitGroup
  // Three workers serve different peers concurrently, while SQLite leases
  // ensure only one in-flight message per peer, in receive order.
- workers.Add(5)
+ workers.Add(6)
  defer func(){stopWorkers();workers.Wait()}()
+ go func(){defer workers.Done();periodicBackup(workerCtx.Done(),store,func(err error){log.Printf("Резервное копирование: %v",err)})}()
  for i:=0;i<3;i++{go func(){defer workers.Done();b.processPending(workerCtx)}()}
  // Verify every configured model through its actual free API. Reuse recent
  // results after a restart; periodically recheck stale successes and failures.
