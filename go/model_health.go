@@ -55,7 +55,7 @@ func newModelHealth(path string)*ModelHealth {
 }
 func (h *ModelHealth) reload(force bool)error{
  h.mu.Lock();defer h.mu.Unlock()
- if !force&&time.Since(h.lastRead)<15*time.Second{return nil}
+ if !force&&time.Since(h.lastRead)<2*time.Second{return nil}
  raw,err:=os.ReadFile(h.path)
  h.lastRead=time.Now()
  if errors.Is(err,os.ErrNotExist){h.entries=map[string]modelStatus{};return nil}
@@ -90,6 +90,29 @@ func(h *ModelHealth) record(cfg Config,key string,passed bool)error{
 }
 func(h *ModelHealth) recordReason(cfg Config,key string,passed bool,reason string)error{
  h.mu.Lock();defer h.mu.Unlock()
+ // The root-run setup/CLI and the unprivileged VK service write the same
+ // status file. Lock the already shared data directory (instead of creating
+ // a potentially root-owned lock file) and merge the latest on-disk results
+ // before committing this single model. Without this, an unrelated scan
+ // could silently erase a newly verified model.
+ dir:=filepath.Dir(h.path)
+ if err:=os.MkdirAll(dir,0750);err!=nil{return err}
+ lock,err:=os.Open(dir)
+ if err!=nil{return fmt.Errorf("не удалось открыть каталог состояния: %w",err)}
+ defer lock.Close()
+ if err=syscall.Flock(int(lock.Fd()),syscall.LOCK_EX);err!=nil{
+  return fmt.Errorf("не удалось заблокировать результаты проверки: %w",err)
+ }
+ defer syscall.Flock(int(lock.Fd()),syscall.LOCK_UN)
+ disk,err:=os.ReadFile(h.path)
+ if err==nil{
+  var latest map[string]modelStatus
+  if err=json.Unmarshal(disk,&latest);err!=nil{return fmt.Errorf("повреждён файл результатов проверки: %w",err)}
+  if latest==nil{latest=map[string]modelStatus{}}
+  h.entries=latest
+ }else if errors.Is(err,os.ErrNotExist){
+  h.entries=map[string]modelStatus{}
+ }else{return fmt.Errorf("чтение результатов проверки: %w",err)}
  h.entries[key]=modelStatus{
   CheckedAt:time.Now().UTC(),Fingerprint:modelFingerprint(cfg,key),Passed:passed,Reason:reason,
  }
@@ -135,6 +158,15 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
  consoleSpinner(out,"Обновление каталогов бесплатных ИИ",func(){problems=c.refresh(refreshCtx,cfg)})
  cancel()
  keys:=c.candidates(cfg)
+ // Start with the model already chosen by the administrator so VK can
+ // offer a working model as early as possible while the remaining free
+ // models continue their background checks.
+ for i,key:=range keys{
+  if key==cfg.DefaultModel&&i>0{
+   keys=append([]string{key},append(keys[:i],keys[i+1:]...)...)
+   break
+  }
+ }
  if len(keys)==0{
   fmt.Fprintln(out,"Доступных ИИ-моделей нет. Проверьте включённые сервисы, ключи и каталоги.")
   return errors.New("нет моделей для проверки")

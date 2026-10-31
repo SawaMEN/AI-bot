@@ -98,9 +98,22 @@ func panelHTTPHandler(c *Catalog,hash,domain string)http.Handler{
     restartCancel()
    }else{
     if err=saveConfig(current);err!=nil{status="Ошибка сохранения: "+err.Error()}
-    if err==nil&&r.Form.Get("action")=="provider"{
-     refreshCtx,refreshCancel:=context.WithTimeout(r.Context(),20*time.Second)
-     c.refresh(refreshCtx,current);refreshCancel()
+    if err==nil{
+     if r.Form.Get("action")=="provider"{
+      refreshCtx,refreshCancel:=context.WithTimeout(r.Context(),20*time.Second)
+      c.refresh(refreshCtx,current);refreshCancel()
+     }
+     // The bot reads config only on startup. Without an automatic restart,
+     // the panel reports success but VK continues using the old API keys and
+     // its old model list indefinitely.
+     restartCtx,restartCancel:=context.WithTimeout(context.Background(),20*time.Second)
+     cmd:=exec.CommandContext(restartCtx,"systemctl","restart","ai-bot.service")
+     if e:=cmd.Run();e!=nil{
+      status+=". Настройки сохранены, но перезапуск бота не удался: sudo aibot restart"
+     }else{
+      status+=". Служба перезапущена; проверка моделей выполняется автоматически"
+     }
+     restartCancel()
     }
    }
    notice.Store(status)
@@ -149,11 +162,18 @@ func applyWebForm(cfg *Config,c *Catalog,form url.Values)(string,error){
   if settings.Enabled&&settings.APIKey==""&&spec.AnonymousKey==""{return "",errors.New("нужен API-ключ")}
   cfg.Providers[id]=settings
   cfg.AutoModelsProviders=removeExact(cfg.AutoModelsProviders,id)
-  if settings.Enabled&&form.Get("auto")=="on"{
+  hasManual:=false
+  for _,key:=range cfg.EnabledModels{
+   p,model,err:=splitModel(key)
+   if err==nil&&p==id&&c.modelAllowedID(p,model){hasManual=true;break}
+  }
+  // When the web form connects a provider but selects no individual model,
+  // opt into curated/free discovery instead of saving an unusable setup.
+  if settings.Enabled&&(form.Get("auto")=="on"||!hasManual){
    cfg.AutoModelsProviders=append(cfg.AutoModelsProviders,id)
    cfg.EnabledModels=removeProvider(cfg.EnabledModels,id)
   }
-  return "Провайдер сохранён",nil
+  return "Провайдер подключён. Проверка доступности бесплатных моделей запущена",nil
  case "settings":
   fields:=map[string]*int{"context_messages":&cfg.ContextMessages,"context_hours":&cfg.ContextHours,"retention_days":&cfg.RetentionDays,"max_requests_hour":&cfg.MaxRequestsHour,"max_user_requests_hour":&cfg.MaxUserRequestsHour,"max_chat_requests_hour":&cfg.MaxChatRequestsHour}
   for field,target:=range fields{n,err:=strconv.Atoi(form.Get(field));if err!=nil||n<1||n>10000{return "",fmt.Errorf("неверное значение %s",field)};*target=n}

@@ -33,7 +33,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",homeKeyboardForPeer(m.PeerID))}
  if b.cfg.CooldownSeconds>0&&time.Since(b.cooldowns[m.PeerID])<time.Duration(b.cfg.CooldownSeconds)*time.Second{return nil}
  model,search,style,count,fallback:=b.store.effective(b.cfg,m.PeerID,m.FromID,b.catalog)
- if model==""{return b.send(ctx,m,"Администратор ещё не подключил доступную бесплатную ИИ-модель. sudo aibot",homeKeyboardForPeer(m.PeerID))}
+ if model==""{return b.send(ctx,m,"Пока нет подтверждённых работающих ИИ.\n\n"+modelAvailabilityExplanation(b.catalog,b.cfg),homeKeyboardForPeer(m.PeerID))}
  total,chat,user:=b.store.counts(m.PeerID,m.FromID)
  if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))

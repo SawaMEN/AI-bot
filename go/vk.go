@@ -242,6 +242,9 @@ func modelBoard(c *Catalog,cfg Config,page int,chat bool)string{
  rows:=[][]Btn{}
  prefix:="";back:="настройки"
  if chat{prefix="диалог ";back="диалог"}
+ if len(allowed)==0{
+  return board([][]Btn{{{"↻ Обновить список",func()string{if chat{return "диалог модели 1"};return "модели"}()}},{{"← Назад",back},{"🏠 Меню","меню"}}})
+ }
  for i:=(page-1)*3;i<min(page*3,len(allowed));i++{
   label:=c.label(allowed[i])
   if len([]rune(label))>32{label=string([]rune(label)[:31])+"…"}
