@@ -40,6 +40,7 @@ func openStore(path string)(*Store,error){
   "CREATE INDEX IF NOT EXISTS idx_pending_created ON pending(created_at,event_id)",
   "CREATE TABLE IF NOT EXISTS meta(name TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS model_metrics(model TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,successes INTEGER NOT NULL DEFAULT 0,total_latency_ms INTEGER NOT NULL DEFAULT 0,last_failure INTEGER NOT NULL DEFAULT 0,last_success INTEGER NOT NULL DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS menu_state(peer_id INTEGER PRIMARY KEY,section TEXT NOT NULL,updated_at INTEGER NOT NULL)",
  }
  for _,query:=range schema{if _,err=db.Exec(query);err!=nil{db.Close();return nil,fmt.Errorf("SQLite: %w",err)}}
  for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"},{"pending","peer_id","INTEGER NOT NULL DEFAULT 0"},{"pending","lease_until","INTEGER NOT NULL DEFAULT 0"},{"messages","reply_sender","INTEGER NOT NULL DEFAULT 0"}}{
