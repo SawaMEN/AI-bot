@@ -55,7 +55,7 @@ func newModelHealth(path string)*ModelHealth {
 }
 func (h *ModelHealth) reload(force bool)error{
  h.mu.Lock();defer h.mu.Unlock()
- if !force&&time.Since(h.lastRead)<15*time.Second{return nil}
+ if !force&&time.Since(h.lastRead)<2*time.Second{return nil}
  raw,err:=os.ReadFile(h.path)
  h.lastRead=time.Now()
  if errors.Is(err,os.ErrNotExist){h.entries=map[string]modelStatus{};return nil}
@@ -90,6 +90,29 @@ func(h *ModelHealth) record(cfg Config,key string,passed bool)error{
 }
 func(h *ModelHealth) recordReason(cfg Config,key string,passed bool,reason string)error{
  h.mu.Lock();defer h.mu.Unlock()
+ // The root-run setup/CLI and the unprivileged VK service write the same
+ // status file. Lock the already shared data directory (instead of creating
+ // a potentially root-owned lock file) and merge the latest on-disk results
+ // before committing this single model. Without this, an unrelated scan
+ // could silently erase a newly verified model.
+ dir:=filepath.Dir(h.path)
+ if err:=os.MkdirAll(dir,0750);err!=nil{return err}
+ lock,err:=os.Open(dir)
+ if err!=nil{return fmt.Errorf("не удалось открыть каталог состояния: %w",err)}
+ defer lock.Close()
+ if err=syscall.Flock(int(lock.Fd()),syscall.LOCK_EX);err!=nil{
+  return fmt.Errorf("не удалось заблокировать результаты проверки: %w",err)
+ }
+ defer syscall.Flock(int(lock.Fd()),syscall.LOCK_UN)
+ disk,err:=os.ReadFile(h.path)
+ if err==nil{
+  var latest map[string]modelStatus
+  if err=json.Unmarshal(disk,&latest);err!=nil{return fmt.Errorf("повреждён файл результатов проверки: %w",err)}
+  if latest==nil{latest=map[string]modelStatus{}}
+  h.entries=latest
+ }else if errors.Is(err,os.ErrNotExist){
+  h.entries=map[string]modelStatus{}
+ }else{return fmt.Errorf("чтение результатов проверки: %w",err)}
  h.entries[key]=modelStatus{
   CheckedAt:time.Now().UTC(),Fingerprint:modelFingerprint(cfg,key),Passed:passed,Reason:reason,
  }
