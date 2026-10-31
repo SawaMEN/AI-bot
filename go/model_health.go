@@ -158,6 +158,15 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
  consoleSpinner(out,"Обновление каталогов бесплатных ИИ",func(){problems=c.refresh(refreshCtx,cfg)})
  cancel()
  keys:=c.candidates(cfg)
+ // Start with the model already chosen by the administrator so VK can
+ // offer a working model as early as possible while the remaining free
+ // models continue their background checks.
+ for i,key:=range keys{
+  if key==cfg.DefaultModel&&i>0{
+   keys=append([]string{key},append(keys[:i],keys[i+1:]...)...)
+   break
+  }
+ }
  if len(keys)==0{
   fmt.Fprintln(out,"Доступных ИИ-моделей нет. Проверьте включённые сервисы, ключи и каталоги.")
   return errors.New("нет моделей для проверки")
