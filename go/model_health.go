@@ -203,26 +203,15 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
   }
   passed:=err==nil&&russianProbeOK(response)
   reason:=""
-  if !passed{
-   reason="api_error"
-   if err==nil&&englishOnly==2{reason="russian_unsupported"
-   }else if err==nil{reason="invalid_response"}
-  }
+  if !passed{reason=classifyModelFailure(err,englishOnly)}
   if recordErr:=c.health.recordReason(cfg,key,passed,reason);recordErr!=nil{
    return fmt.Errorf("не удалось сохранить результат %s: %w",c.label(key),recordErr)
   }
   if !passed{
-   category:="ответ не по-русски или неверный"
-   if err!=nil{
-    category="ошибка API/сети"
-    msg:=err.Error()
-    if strings.Contains(msg,"429"){category="лимит частоты (HTTP 429)"}
-    if strings.Contains(msg,"401")||strings.Contains(msg,"403"){category="ключ или права доступа"}
-    if strings.Contains(msg,"404")||strings.Contains(msg,"410"){category="модель удалена"}
-   }else if reason=="russian_unsupported"{
-    category="нет подтверждённой поддержки русского (исключена из выбора)"
-   }
-   failures[category]++
+   failures[modelFailureLabel(reason)]++
+   // Print a separate, actionable line for each failed model. Aggregated
+   // counts alone are not enough to diagnose a real API key or quota issue.
+   fmt.Fprintf(out,"\n  ✗ %s — %s\n",c.label(key),modelFailureSummary(reason))
   }
   consoleProgress(out,index+1,len(keys),c.label(key))
  }
