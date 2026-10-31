@@ -89,11 +89,17 @@ func (c *Catalog) candidates(cfg Config) []string {
    key:=name+":"+model
    if !seen[key]&&!contains(cfg.RussianBlockedModels,key)&&c.modelAllowedID(name,model){seen[key]=true;result=append(result,key)}
   }
+  hasManual:=false
   for _,key:=range cfg.EnabledModels {
    p,id,err:=splitModel(key);if err!=nil||p!=name||!c.modelAllowedID(p,id){continue}
+   hasManual=true
    if spec.FreePolicy=="curated"||verified[id]{add(id)}
   }
-  auto:=false;for _,p:=range cfg.AutoModelsProviders{if p==name{auto=true;break}}
+  auto:=contains(cfg.AutoModelsProviders,name)
+  // Older installs and the web panel may have enabled a provider without
+  // choosing any models. Treat that as automatic selection instead of
+  // silently presenting an empty VK model list.
+  if !auto&&!hasManual{auto=true}
   if auto {
    if spec.FreePolicy=="curated"{for _,m:=range spec.Models{add(m[0])}
    }else{
@@ -168,6 +174,11 @@ func (c *Catalog) discover(ctx context.Context,p ProviderSpec,key string)([]Mode
 func (c *Catalog) refresh(ctx context.Context,cfg Config)map[string]string {
  errorsBy:=map[string]string{}
  targets:=map[string]bool{}
+ // Keep dynamic provider catalogs ready even when the provider was saved
+ // without explicit auto_models_providers by an older panel/version.
+ for id,settings:=range cfg.Providers{
+  if settings.Enabled{targets[id]=true}
+ }
  for _,p:=range cfg.AutoModelsProviders{targets[p]=true}
  for _,key:=range cfg.EnabledModels{
   p,_,err:=splitModel(key);if err==nil{targets[p]=true}
