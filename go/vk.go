@@ -141,9 +141,12 @@ func mentionExpression(groupID int64)*regexp.Regexp {
 func questionFor(cfg Config,m VKMessage) (string,bool) {
  if !m.Valid(){return "",false}
  text:=strings.TrimSpace(m.Text)
- // VK permanent text-keyboard buttons generate message_new rather than a
- // message_event. They carry a trusted *menu shape*, not a user identity.
- // Only use these in private chats to avoid hijacking normal group messages.
+ // VK bottom-keyboard text actions arrive as message_new with payload.
+ // Recognize them in both personal and group chats; ordinary unmentioned
+ // group messages must still be ignored. Settings are authorized separately.
+ if m.PeerID>=2000000000&&m.FromID>0{
+  if command:=vkGroupReplyCommand(m.Payload);command!=""{return command,true}
+ }
  if m.PeerID<2000000000&&m.FromID>0{
   if command:=vkReplyCommand(m.Payload);command!=""{return command,true}
   // Some clients omit payload. Accept exact known menu labels; arbitrary
