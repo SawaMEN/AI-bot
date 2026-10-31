@@ -13,8 +13,21 @@ import (
  "time"
 )
 
-type Bot struct{cfg Config;store *Store;catalog *Catalog;vk *VK;ai *AI;cooldowns map[int64]time.Time;unavailable map[string]time.Time}
+type Bot struct{cfg Config;store *Store;catalog *Catalog;vk *VK;ai *AI;mu sync.Mutex;cooldowns map[int64]time.Time;unavailable map[string]time.Time}
 func newBot(cfg Config,s *Store,c *Catalog)*Bot{return &Bot{cfg,s,c,newVK(cfg),newAI(c),map[int64]time.Time{},map[string]time.Time{}}}
+func (b *Bot) cooling(peer int64,delay time.Duration)bool{
+ b.mu.Lock();defer b.mu.Unlock()
+ if time.Since(b.cooldowns[peer])<delay{return true}
+ b.cooldowns[peer]=time.Now();return false
+}
+func (b *Bot) blocked(key string)bool{
+ b.mu.Lock();defer b.mu.Unlock()
+ return time.Now().Before(b.unavailable[key])
+}
+func (b *Bot) blockModel(key string,delay time.Duration){
+ b.mu.Lock();defer b.mu.Unlock()
+ b.unavailable[key]=time.Now().Add(delay)
+}
 func (b *Bot) send(ctx context.Context,m VKMessage,body string,buttons string)error{
  return b.vk.send(ctx,m.PeerID,body,buttons,"answer:"+m.EventID())
 }
@@ -31,14 +44,13 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  answer,command:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,m.PeerID,m.FromID,question)
  if command{return b.send(ctx,m,answer,keyboardForPeer(m.PeerID,question,b.catalog,b.cfg))}
  if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",homeKeyboardForPeer(m.PeerID))}
- if b.cfg.CooldownSeconds>0&&time.Since(b.cooldowns[m.PeerID])<time.Duration(b.cfg.CooldownSeconds)*time.Second{return nil}
+ if b.cfg.CooldownSeconds>0&&b.cooling(m.PeerID,time.Duration(b.cfg.CooldownSeconds)*time.Second){return nil}
  model,search,style,count,fallback:=b.store.effective(b.cfg,m.PeerID,m.FromID,b.catalog)
  if model==""{return b.send(ctx,m,"Сейчас нет доступного ИИ. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))}
  total,chat,user:=b.store.counts(m.PeerID,m.FromID)
  if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))
  }
- b.cooldowns[m.PeerID]=time.Now()
  stopThinking:=b.vk.startThinking(ctx,m.PeerID)
  defer stopThinking()
  recent:=b.store.recent(m.PeerID,min(count+1,100),b.cfg.ContextHours)
@@ -83,7 +95,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  }
  var text string;var lastErr error;used:=model;failures:=[]string{}
  for _,candidate:=range candidates{
-  if until,blocked:=b.unavailable[candidate];blocked&&time.Now().Before(until){
+  if b.blocked(candidate){
    failures=append(failures,b.catalog.label(candidate)+": временно исключена после ошибки")
    continue
   }
@@ -92,15 +104,15 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
    lastErr=errors.New("достигнут лимит запросов бота за час")
    failures=append(failures,lastErr.Error());break
   }
-  if err:=b.store.track(m.PeerID,m.FromID);err!=nil{
-   return b.send(ctx,m,"Ошибка учёта бесплатных запросов. Администратор должен проверить SQLite.",homeKeyboardForPeer(m.PeerID))
-  }
+  admitted,quotaErr:=b.store.reserveQuota(b.cfg,m.PeerID,m.FromID)
+  if quotaErr!=nil{return b.send(ctx,m,"Временная ошибка учёта запросов.",homeKeyboardForPeer(m.PeerID))}
+  if !admitted{lastErr=errors.New("достигнут лимит запросов");break}
   cctx,cancel:=context.WithTimeout(ctx,65*time.Second)
   text,lastErr=b.ai.generate(cctx,b.cfg,candidate,messages);cancel()
   if lastErr==nil&&strings.TrimSpace(text)!="" {
    if wantsRussian(question)&&nonRussianProse(text) {
     lastErr=errors.New("модель ответила не по-русски")
-    b.unavailable[candidate]=time.Now().Add(12*time.Hour)
+    b.blockModel(candidate,12*time.Hour)
    }else{
     used=candidate
     if b.catalog.health!=nil{
@@ -116,11 +128,9 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   }
   log.Printf("ИИ %s: %v",candidate,lastErr)
   failures=append(failures,b.catalog.label(candidate)+": "+lastErr.Error())
-  if _,quarantined:=b.unavailable[candidate];!quarantined{
-   pause:=time.Minute
-   if strings.Contains(lastErr.Error(),"квота")||strings.Contains(lastErr.Error(),"ключ")||strings.Contains(lastErr.Error(),"не найдена"){pause=5*time.Minute}
-   b.unavailable[candidate]=time.Now().Add(pause)
-  }
+  pause:=time.Minute
+  if strings.Contains(lastErr.Error(),"квота")||strings.Contains(lastErr.Error(),"ключ")||strings.Contains(lastErr.Error(),"не найдена"){pause=5*time.Minute}
+  b.blockModel(candidate,pause)
   text=""
  }
  if strings.TrimSpace(text)==""{
@@ -140,7 +150,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
 }
 func(b *Bot) processPending(ctx context.Context){
  for ctx.Err()==nil{
-  m,attempts,err:=b.store.nextPending();if err!=nil{
+  m,attempts,err:=b.store.claimPending();if err!=nil{
    if !sleepContext(ctx,350*time.Millisecond){return};continue
   }
   if attempts>0&&attempts%10==0{
@@ -203,9 +213,11 @@ func runBot(ctx context.Context,cfg Config)error{
  store.cleanup(cfg.RetentionDays)
  workerCtx,stopWorkers:=context.WithCancel(ctx)
  var workers sync.WaitGroup
- workers.Add(3)
+ // Three workers serve different peers concurrently, while SQLite leases
+ // ensure only one in-flight message per peer, in receive order.
+ workers.Add(5)
  defer func(){stopWorkers();workers.Wait()}()
- go func(){defer workers.Done();b.processPending(workerCtx)}()
+ for i:=0;i<3;i++{go func(){defer workers.Done();b.processPending(workerCtx)}()}
  // Verify every configured model through its actual free API. Reuse recent
  // results after a restart; periodically recheck stale successes and failures.
  go func(){
