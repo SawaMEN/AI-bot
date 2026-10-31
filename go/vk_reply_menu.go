@@ -73,6 +73,12 @@ func replyModelBoard(c *Catalog,cfg Config,page int)string{
  if page<1{page=1}
  if page>maxPage{page=maxPage}
  rows:=make([][]replyButton,0,7)
+ if len(allowed)==0{
+  return replyKeyboard([][]replyButton{
+   {{"↻ Обновить список","модели","primary"}},
+   {{"⚙ Настройки","настройки","secondary"},{"🏠 Меню","меню","positive"}},
+  })
+ }
  for i:=(page-1)*3;i<min(page*3,len(allowed));i++{
   label:=c.label(allowed[i])
   if len([]rune(label))>31{label=string([]rune(label)[:30])+"…"}
