@@ -13,7 +13,7 @@ import (
 
 func buttonLabels(t *testing.T,raw string)[]string{
  t.Helper()
- var v struct{Buttons [][]struct{Action struct{Label,Payload string `json:"label"`} `json:"action"`} `json:"buttons"`}
+ var v struct{Buttons [][]struct{Action struct{Label string `json:"label"`;Payload string `json:"payload"`} `json:"action"`} `json:"buttons"`}
  if err:=json.Unmarshal([]byte(raw),&v);err!=nil{t.Fatal(err)}
  labels:=[]string{}
  for _,row:=range v.Buttons{
