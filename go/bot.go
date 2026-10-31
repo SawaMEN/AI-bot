@@ -33,7 +33,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",homeKeyboardForPeer(m.PeerID))}
  if b.cfg.CooldownSeconds>0&&time.Since(b.cooldowns[m.PeerID])<time.Duration(b.cfg.CooldownSeconds)*time.Second{return nil}
  model,search,style,count,fallback:=b.store.effective(b.cfg,m.PeerID,m.FromID,b.catalog)
- if model==""{return b.send(ctx,m,"Пока нет подтверждённых работающих ИИ.\n\n"+modelAvailabilityExplanation(b.catalog,b.cfg),homeKeyboardForPeer(m.PeerID))}
+ if model==""{return b.send(ctx,m,"Сейчас нет доступного ИИ. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))}
  total,chat,user:=b.store.counts(m.PeerID,m.FromID)
  if total>=b.cfg.MaxRequestsHour||chat>=b.cfg.MaxChatRequestsHour||user>=b.cfg.MaxUserRequestsHour{
   return b.send(ctx,m,"Лимит бесплатных запросов за час достигнут. Попробуйте позже.",homeKeyboardForPeer(m.PeerID))
@@ -111,7 +111,8 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   }
   if lastErr==nil{lastErr=errors.New("модель вернула пустой ответ")}
   if b.catalog.health!=nil{
-   if err:=b.catalog.health.record(b.cfg,candidate,false);err!=nil{log.Printf("Сохранение статуса модели: %v",err)}
+   reason:=classifyModelFailure(lastErr,0)
+   if err:=b.catalog.health.recordReason(b.cfg,candidate,false,reason);err!=nil{log.Printf("Сохранение статуса модели: %v",err)}
   }
   log.Printf("ИИ %s: %v",candidate,lastErr)
   failures=append(failures,b.catalog.label(candidate)+": "+lastErr.Error())
@@ -123,10 +124,10 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
   text=""
  }
  if strings.TrimSpace(text)==""{
-  text="Не удалось получить ответ от подключённых ИИ."
-  if len(failures)>0{text+="\nПричины: "+strings.Join(failures,"; ")}
-  text+="\nАдминистратор: проверьте ключи и модели командой sudo aibot check-models (подробности: sudo aibot logs)."
-  if len(found)>0{text+="\nРезультаты поиска:\n"+sourcesText(found)}
+  // Provider, key, quota and health details are admin-only diagnostics.
+  // Never send private infrastructure details to ordinary VK members.
+  if len(failures)>0{log.Printf("ИИ: %d вариантов не ответили",len(failures))}
+  text="Не удалось получить ответ. Попробуйте позже или выберите другую доступную модель в разделе «ИИ»."
  }
  if len(found)>0{urls:=[]string{};for _,r:=range found{urls=append(urls,r.URL)};text+="\nИсточники:\n"+strings.Join(urls,"\n")}
  if used!=model{text+="\n(Резервная бесплатная модель: "+b.catalog.label(used)+")"}
