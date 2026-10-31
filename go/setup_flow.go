@@ -166,6 +166,7 @@ func(w Wizard) diagnosticsHub(cfg Config,c *Catalog){
    {2,"Все модели + русский язык","Реальный запрос к каждой модели; только прошедшие появятся в списке",""},
    {3,"Проверка сети без запросов к ИИ","DNS, TCP, TLS; без расхода бесплатной квоты",""},
    {4,"Журнал ошибок","Последние 70 строк службы AI-bot",""},
+   {5,"Статистика","Очередь, число обращений и успешность моделей",""},
    {0,"Назад","Главное меню",""},
   })
   switch action{
@@ -185,6 +186,12 @@ func(w Wizard) diagnosticsHub(cfg Config,c *Catalog){
   case 4:
    fmt.Fprintln(w.out,"Журнал AI-bot: sudo aibot logs")
    showBotLogs(w.out,70)
+  case 5:
+   store,err:=openStore(dataPath())
+   if err!=nil{fmt.Fprintln(w.out,"Ошибка статистики:",err)}else{
+    fmt.Fprintln(w.out,store.consoleUsageStats(cfg,c))
+    store.close()
+   }
   }
   w.pauseMenu()
  }
@@ -196,6 +203,7 @@ func(w Wizard) maintenanceHub(){
    {1,"Перезапустить службу","Применить изменения параметров AI-bot",""},
    {2,"Проверить журнал","Ошибки запуска, VK API и моделей",""},
    {3,"Очистить историю и очередь","Удаление без возможности восстановления","Осторожно"},
+   {4,"Создать резервную копию","Согласованный снимок SQLite и настроек",""},
    {0,"Назад","Главное меню",""},
   })
   switch action{
@@ -205,6 +213,13 @@ func(w Wizard) maintenanceHub(){
    consoleSpinner(w.out,"Перезапуск службы",func(){err=service("restart")})
    if err!=nil{fmt.Fprintln(w.out,"Ошибка:",err)}else{fmt.Fprintln(w.out,"✓ Служба перезапущена")}
   case 2:showBotLogs(w.out,70)
+  case 4:
+   store,err:=openStore(dataPath())
+   if err!=nil{fmt.Fprintln(w.out,"Ошибка резервного копирования:",err)}else{
+    folder,err:=backupState(store)
+    if err!=nil{fmt.Fprintln(w.out,"Ошибка копирования:",err)}else{fmt.Fprintln(w.out,"Резервная копия:",folder)}
+    store.close()
+   }
   case 3:
    if w.ask("Для удаления истории введите ДА","нет")=="ДА"{
     store,err:=openStore(dataPath())
