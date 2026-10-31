@@ -83,6 +83,7 @@ func(h *ModelHealth) due(cfg Config,key string)bool{
  if age<0{return true}
  if r.Passed{return age>=modelRecheckAfter}
  if r.Reason=="russian_unsupported"{return age>=modelLanguageRetryAfter}
+ if r.Reason=="rate_limit"||r.Reason=="billing"||r.Reason=="auth"{return age>=4*time.Hour}
  return age>=modelFailureRetryAfter
 }
 func(h *ModelHealth) record(cfg Config,key string,passed bool)error{
@@ -174,6 +175,7 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
  fmt.Fprintf(out,"Проверка всех %d настроенных бесплатных моделей с этого сервера (реальные API-запросы)...\n",len(keys))
  checked,cached:=0,0
  failures:=map[string]int{}
+ perProvider:=map[string]int{}
  for index,key:=range keys {
   if err:=ctx.Err();err!=nil{return err}
   if !force&&!c.health.due(cfg,key){
@@ -181,6 +183,11 @@ func scanAvailableModelsWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
    consoleProgress(out,index+1,len(keys),c.label(key)+" • проверено ранее")
    continue
   }
+  provider,_,_:=splitModel(key)
+  // Background checks must not deplete entire free-tier quotas: prioritize
+  // providers fairly, and distribute the remaining candidates over runs.
+  if !force&&(checked>=8||perProvider[provider]>=3){continue}
+  perProvider[provider]++
   checked++
   var response string;var err error
   englishOnly:=0
