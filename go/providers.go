@@ -45,6 +45,7 @@ func (ai *AI) generate(ctx context.Context,cfg Config,key string,messages []Mess
  case 401,403:return "",errors.New("ключ недействителен или доступ запрещён (HTTP 401/403)")
  case 402:return "",errors.New("бесплатный баланс исчерпан или требуется оплата (HTTP 402)")
  case 404,410:return "",errors.New("модель не найдена или удалена у провайдера (HTTP 404/410)")
+ case 422:return "",errors.New("API отклонил параметры запроса (HTTP 422)")
  case 429:return "",errors.New("бесплатная квота или лимит частоты исчерпаны (HTTP 429)")
  }
  if response.StatusCode>=500{return "",fmt.Errorf("сервер ИИ временно недоступен (HTTP %d)",response.StatusCode)}
@@ -69,7 +70,22 @@ func (ai *AI) generate(ctx context.Context,cfg Config,key string,messages []Mess
  }else if choices,ok:=result["choices"].([]any);ok&&len(choices)>0{
   if choice,ok:=choices[0].(map[string]any);ok{
    if msg,ok:=choice["message"].(map[string]any);ok{
-    if text,ok:=msg["content"].(string);ok&&text!=""{return text,nil}
+    if text,ok:=msg["content"].(string);ok&&strings.TrimSpace(text)!=""{return text,nil}
+    // Some OpenAI-compatible free providers return text blocks as a
+    // content array instead of a plain string. Do not mistake these
+    // successful responses for "model unavailable".
+    if parts,ok:=msg["content"].([]any);ok{
+     var combined strings.Builder
+     for _,part:=range parts{
+      item,ok:=part.(map[string]any);if !ok{continue}
+      if kind,ok:=item["type"].(string);ok&&kind!="text"&&kind!="output_text"{continue}
+      if value,ok:=item["text"].(string);ok{combined.WriteString(value)}
+     }
+     if combined.Len()>0{return combined.String(),nil}
+    }
+   }
+   if reason,ok:=choice["finish_reason"].(string);ok&&reason=="length"{
+    return "",errors.New("API не вернул текст: лимит выходных токенов израсходован")
    }
   }
  }
