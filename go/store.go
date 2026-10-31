@@ -24,7 +24,7 @@ type VKMessage struct {
 }
 func (m VKMessage) EventID()string {id:=m.ConversationMessageID;if id==0{id=m.ID};return fmt.Sprintf("vk:%d:%d",m.PeerID,id)}
 func (m VKMessage) Valid()bool{return m.PeerID>0&&m.FromID>0&&(m.ConversationMessageID>0||m.ID>0)&&m.Text!=""&&m.Out==0}
-type Turn struct{Sender int64;Text string}
+type Turn struct{Sender int64;Text string;ReplyTo int64}
 type Pref struct{Model,Search,Style,Fallback string;Context int}
 func openStore(path string)(*Store,error){
  if err:=os.MkdirAll(filepath.Dir(path),0700);err!=nil{return nil,err}
@@ -39,9 +39,10 @@ func openStore(path string)(*Store,error){
   "CREATE TABLE IF NOT EXISTS pending(event_id TEXT PRIMARY KEY,payload TEXT NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0)",
   "CREATE INDEX IF NOT EXISTS idx_pending_created ON pending(created_at,event_id)",
   "CREATE TABLE IF NOT EXISTS meta(name TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS model_metrics(model TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,successes INTEGER NOT NULL DEFAULT 0,total_latency_ms INTEGER NOT NULL DEFAULT 0,last_failure INTEGER NOT NULL DEFAULT 0,last_success INTEGER NOT NULL DEFAULT 0)",
  }
  for _,query:=range schema{if _,err=db.Exec(query);err!=nil{db.Close();return nil,fmt.Errorf("SQLite: %w",err)}}
- for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"},{"pending","peer_id","INTEGER NOT NULL DEFAULT 0"},{"pending","lease_until","INTEGER NOT NULL DEFAULT 0"}}{
+ for _,table:=range []struct{table,column,definition string}{{"calls","peer_id","INTEGER"},{"calls","sender_id","INTEGER"},{"preferences","fallback","TEXT"},{"pending","response_text","TEXT"},{"pending","retry_after","INTEGER NOT NULL DEFAULT 0"},{"pending","peer_id","INTEGER NOT NULL DEFAULT 0"},{"pending","lease_until","INTEGER NOT NULL DEFAULT 0"},{"messages","reply_sender","INTEGER NOT NULL DEFAULT 0"}}{
   rows,err:=db.Query("PRAGMA table_info("+table.table+")");if err!=nil{db.Close();return nil,err}
   exists:=false;for rows.Next(){var index,notnull,pk int;var name,kind string;var d sql.NullString;if err=rows.Scan(&index,&name,&kind,&notnull,&d,&pk);err!=nil{break};if name==table.column{exists=true}}
   rows.Close();if err!=nil{db.Close();return nil,err}
@@ -62,8 +63,8 @@ func (s *Store) recordAndQueue(m VKMessage,mentioned bool)(bool,error){
  txt:=[]rune(m.Text);if len(txt)>3000{txt=txt[:3000]}
  tx,err:=s.DB.Begin();if err!=nil{return false,err}
  defer tx.Rollback()
- result,err:=tx.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at) VALUES(?,?,?,?,?)",
-  m.PeerID,m.FromID,m.EventID(),string(txt),time.Now().Unix())
+ result,err:=tx.Exec("INSERT OR IGNORE INTO messages(peer_id,sender_id,event_id,text,created_at,reply_sender) VALUES(?,?,?,?,?,?)",
+  m.PeerID,m.FromID,m.EventID(),string(txt),time.Now().Unix(),func()int64{if m.ReplyMessage!=nil{return m.ReplyMessage.FromID};return 0}())
  if err!=nil{return false,err}
  inserted,_:=result.RowsAffected()
  if mentioned&&inserted==1{
@@ -87,9 +88,9 @@ func (s *Store) answer(m VKMessage,text string,groupID int64)error{
  return err
 }
 func (s *Store) recent(peer int64,n,hours int)[]Turn{
- rows,err:=s.DB.Query("SELECT sender_id,text FROM messages WHERE peer_id=? AND created_at>=? ORDER BY id DESC LIMIT ?",peer,time.Now().Add(-time.Duration(hours)*time.Hour).Unix(),min(100,max(1,n)))
+ rows,err:=s.DB.Query("SELECT sender_id,text,reply_sender FROM messages WHERE peer_id=? AND created_at>=? ORDER BY id DESC LIMIT ?",peer,time.Now().Add(-time.Duration(hours)*time.Hour).Unix(),min(100,max(1,n)))
  if err!=nil{return nil};defer rows.Close()
- turns:=[]Turn{};for rows.Next(){var t Turn;if rows.Scan(&t.Sender,&t.Text)==nil{turns=append(turns,t)}}
+ turns:=[]Turn{};for rows.Next(){var t Turn;if rows.Scan(&t.Sender,&t.Text,&t.ReplyTo)==nil{turns=append(turns,t)}}
  for i,j:=0,len(turns)-1;i<j;i,j=i+1,j-1{turns[i],turns[j]=turns[j],turns[i]}
  return turns
 }
