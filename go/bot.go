@@ -14,7 +14,7 @@ import (
 )
 
 type Bot struct{cfg Config;store *Store;catalog *Catalog;vk *VK;ai *AI;mu sync.Mutex;cooldowns map[int64]time.Time;unavailable map[string]time.Time}
-func newBot(cfg Config,s *Store,c *Catalog)*Bot{return &Bot{cfg,s,c,newVK(cfg),newAI(c),map[int64]time.Time{},map[string]time.Time{}}}
+func newBot(cfg Config,s *Store,c *Catalog)*Bot{return &Bot{cfg:cfg,store:s,catalog:c,vk:newVK(cfg),ai:newAI(c),cooldowns:map[int64]time.Time{},unavailable:map[string]time.Time{}}}
 func (b *Bot) cooling(peer int64,delay time.Duration)bool{
  b.mu.Lock();defer b.mu.Unlock()
  if time.Since(b.cooldowns[peer])<delay{return true}
