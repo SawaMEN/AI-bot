@@ -28,6 +28,11 @@ func (b *Bot) blockModel(key string,delay time.Duration){
  b.mu.Lock();defer b.mu.Unlock()
  b.unavailable[key]=time.Now().Add(delay)
 }
+func (b *Bot) lastKeyboard(peer int64)string{
+ section:=b.store.activeMenu(peer)
+ if section==""{return answerKeyboardForPeer(peer)}
+ return keyboardForPeer(peer,section,b.catalog,b.cfg)
+}
 func (b *Bot) send(ctx context.Context,m VKMessage,body string,buttons string)error{
  return b.vk.send(ctx,m.PeerID,body,buttons,"answer:"+m.EventID())
 }
@@ -37,12 +42,15 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  cached,ready,err:=b.store.prepared(m)
  if err!=nil{return err}
  if ready{
-  if err=b.vk.send(ctx,m.PeerID,cached,answerKeyboardForPeer(m.PeerID),"answer:"+m.EventID());err!=nil{return err}
+  if err=b.vk.send(ctx,m.PeerID,cached,b.lastKeyboard(m.PeerID),"answer:"+m.EventID());err!=nil{return err}
   return b.store.answer(m,cached,b.cfg.GroupID)
  }
  question,mentioned:=questionFor(b.cfg,m);if !mentioned{return nil}
  answer,command:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,m.PeerID,m.FromID,question)
- if command{return b.send(ctx,m,answer,keyboardForPeer(m.PeerID,question,b.catalog,b.cfg))}
+ if command{
+  b.store.rememberMenu(m.PeerID,question)
+  return b.send(ctx,m,answer,keyboardForPeer(m.PeerID,question,b.catalog,b.cfg))
+ }
  if strings.TrimSpace(question)==""{return b.send(ctx,m,"Задайте вопрос после упоминания или откройте меню.",homeKeyboardForPeer(m.PeerID))}
  if b.cfg.CooldownSeconds>0&&b.cooling(m.PeerID,time.Duration(b.cfg.CooldownSeconds)*time.Second){return nil}
  model,search,style,count,fallback:=b.store.effective(b.cfg,m.PeerID,m.FromID,b.catalog)
@@ -148,7 +156,7 @@ func (b *Bot) execute(ctx context.Context,m VKMessage)error{
  if len([]rune(text))>3500{text=string([]rune(text)[:3500])}
  if err:=b.store.prepare(m,text);err!=nil{return err}
  stopThinking()
- if err:=b.send(ctx,m,text,answerKeyboardForPeer(m.PeerID));err!=nil{return err}
+ if err:=b.send(ctx,m,text,b.lastKeyboard(m.PeerID));err!=nil{return err}
  if err:=b.store.answer(m,text,b.cfg.GroupID);err!=nil{return err}
  return nil
 }
@@ -189,6 +197,7 @@ func(b *Bot) button(ctx context.Context,peer,user int64,eventID string,payload [
  _=b.vk.answerButton(ctx,peer,user,eventID)
  text,ok:=processCommand(ctx,b.vk,b.store,b.catalog,b.cfg,peer,user,cmd)
  if !ok{return}
+ b.store.rememberMenu(peer,cmd)
  buttons:=keyboardForPeer(peer,cmd,b.catalog,b.cfg)
  // Persistent keyboards belong to the input area and cannot be created by
  // editing an old inline message. Respond with a fresh VK message to install
