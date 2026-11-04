@@ -90,6 +90,8 @@ func(w Wizard) provider(cfg *Config,c *Catalog,id string){
  status:="Отключён"
  if settings.Enabled{status="Включён"}
  keyState:="нет ключа"
+ if !p.requiresKey(){keyState="ключ не требуется"}
+ if p.KeyMode=="optional"{keyState="ключ необязателен"}
  if settings.APIKey!=""||p.AnonymousKey!=""{keyState="ключ сохранён"}
  choice:=w.chooseMenu("ИИ-СЕРВИС • "+p.Name,
   fmt.Sprintf("Доступен ключ: %s\nСостояние: %s; %s; моделей проверено: %d",
@@ -236,7 +238,7 @@ func applySettings(w Wizard,cfg Config,c *Catalog){
  connected:=false
  for id,p:=range cfg.Providers{
   spec,ok:=c.Specs[id]
-  if ok&&p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){connected=true;break}
+  if ok&&p.Enabled&&(!spec.requiresKey()||p.APIKey!=""||spec.AnonymousKey!=""){connected=true;break}
  }
  if !connected{
   if err:=service("stop");err!=nil{fmt.Fprintln(w.out,"Внимание: не удалось остановить прежнюю службу:",err)}
@@ -288,7 +290,7 @@ func run()error{
  }
  w:=Wizard{bufio.NewReader(os.Stdin),os.Stdout}
  if command=="is-configured"{
-  connected:=false;for id,p:=range cfg.Providers{spec:=catalog.Specs[id];if p.Enabled&&(p.APIKey!=""||spec.AnonymousKey!=""){connected=true}}
+  connected:=false;for id,p:=range cfg.Providers{spec:=catalog.Specs[id];if p.Enabled&&(!spec.requiresKey()||p.APIKey!=""||spec.AnonymousKey!=""){connected=true}}
   if !connected||cfg.VKToken==""||cfg.GroupID<1{return errors.New("настройка не завершена")};return nil
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
