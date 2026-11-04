@@ -32,7 +32,11 @@ func (w Wizard) configureProviderWith(cfg *Config,c *Catalog,id string,mode int,
   }
   fmt.Fprintln(w.out,"Найден HTTPS-прокси. Проверю действительный API-маршрут после ввода ключа.")
  }
- if spec.Type=="openai_anon"{fmt.Fprintln(w.out,"2/3. Бесплатный доступ без регистрации и API-ключа.")}else{fmt.Fprintf(w.out,"2/3. API-ключ. Получить: %s\n",spec.KeyURL)}
+ switch spec.KeyMode{
+ case "none":fmt.Fprintln(w.out,"2/3. Бесплатный API без регистрации и ключа.")
+ case "optional":fmt.Fprintf(w.out,"2/3. Без регистрации, ключ необязателен (может увеличить бесплатный лимит). Получить: %s\n",spec.KeyURL)
+ default:fmt.Fprintf(w.out,"2/3. Бесплатный API с регистрацией. Получить ключ: %s\n",spec.KeyURL)
+}
  original:=cfg.Providers[id]
  trial:=*cfg
  trial.Providers=make(map[string]ProviderConfig,len(cfg.Providers)+1)
@@ -41,14 +45,16 @@ func (w Wizard) configureProviderWith(cfg *Config,c *Catalog,id string,mode int,
  trial.AutoModelsProviders=append([]string{},cfg.AutoModelsProviders...)
  trial.RussianBlockedModels=append([]string{},cfg.RussianBlockedModels...)
  next:=original
- if spec.Type=="openai_anon"{next.APIKey=""}else if spec.AnonymousKey==""||original.APIKey!=""{
+ if spec.KeyMode=="none"{next.APIKey=""}else if spec.KeyMode=="optional"{
+  next.APIKey=w.secret("Необязательный API-ключ (Enter — пропустить/оставить прежний)",original.APIKey)
+ }else if spec.AnonymousKey==""||original.APIKey!=""{
   next.APIKey=w.secret("Введите API-ключ (Enter — оставить старый)",original.APIKey)
  }
  if strings.TrimSpace(next.APIKey)!=next.APIKey||len(next.APIKey)>4096||strings.ContainsAny(next.APIKey,"\n\r\t "){
   fmt.Fprintln(w.out,"✗ Ключ содержит пробелы/управляющие символы или слишком длинный. Настройки не изменены.")
   return false
  }
- if next.APIKey==""&&spec.AnonymousKey==""&&spec.Type!="openai_anon"{
+ if spec.requiresKey()&&next.APIKey==""&&spec.AnonymousKey==""{
   fmt.Fprintln(w.out,"✗ Нужен API-ключ. Настройки не изменены.")
   return false
  }
