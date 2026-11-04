@@ -34,7 +34,7 @@ func adminMenuButtons(c *Catalog,cfg Config,command string)string{
   return adminMenuButtons(c,cfg,"админ функции")
  case "всего","пользователь","беседа","пауза":
   return adminMenuButtons(c,cfg,"админ лимиты")
- case "группа","токен","администратор":
+ case "группа","токен","администратор","события":
   return adminMenuButtons(c,cfg,"админ вк")
  case "провайдеры":
   page:=1;if len(parts)>2{page,_=strconv.Atoi(parts[2])};if page<1{page=1}
@@ -101,6 +101,7 @@ func adminMenuButtons(c *Catalog,cfg Config,command string)string{
   return replyKeyboard([][]replyButton{
    {{"🆔 ID сообщества","админ выбор группа","primary"}},
    {{"🔐 Токен сообщества","админ выбор токен","secondary"}},
+   {{"⚡ Включить события VK","админ события","secondary"}},
    {{"👤 Администратор бота","админ выбор администратор","secondary"}},
    {{"⌨ Обращение к боту","админ выбор триггер","secondary"}},
    {{"← Меню админа","админ","positive"}},
@@ -198,6 +199,12 @@ func (b *Bot) adminCommand(ctx context.Context,cfg Config,peer,user int64,raw st
   return "✓ Основная модель: "+b.catalog.label(key),true
  }
  if action=="функции"||action=="лимиты"||action=="вк"{return adminSettingsSummary(b.catalog,cfg),true}
+ if action=="события"{
+  vk:=newVK(cfg)
+  checkCtx,cancel:=context.WithTimeout(ctx,12*time.Second);defer cancel()
+  if err:=vk.setLongPollEvents(checkCtx);err!=nil{return "ВК не разрешил включить Long Poll: "+err.Error(),true}
+  return "✓ Включены события сообщений и нажатий кнопок ВК.",true
+ }
  if action=="выбор"&&len(parts)==3{
   label:=map[string]string{
    "контекст":"максимум сообщений контекста (1–100)","часы":"максимальный возраст контекста в часах (1–168)",
