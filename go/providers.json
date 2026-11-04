@@ -1,11 +1,99 @@
 {
-  "schema": 2,
+  "schema": 3,
   "providers": [
     {
+      "id": "g4fgroq",
+      "name": "GPT-OSS / G4F Groq (без регистрации)",
+      "key_url": "https://g4f.dev/docs/ready_to_use.html",
+      "type": "openai_anon",
+      "key_mode": "none",
+      "endpoint": "https://g4f.space/api/groq/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "openai/gpt-oss-120b",
+          "GPT-OSS 120B"
+        ]
+      ]
+    },
+    {
+      "id": "g4fgemini",
+      "name": "Gemini / G4F (без регистрации)",
+      "key_url": "https://g4f.dev/docs/ready_to_use.html",
+      "type": "openai_anon",
+      "key_mode": "none",
+      "endpoint": "https://g4f.space/api/gemini/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "gemini-2.5-flash",
+          "Gemini 2.5 Flash"
+        ],
+        [
+          "gemini-2.5-flash-lite",
+          "Gemini 2.5 Flash Lite"
+        ]
+      ]
+    },
+    {
+      "id": "g4follama",
+      "name": "Llama / Mistral / G4F (без регистрации)",
+      "key_url": "https://g4f.dev/docs/ready_to_use.html",
+      "type": "openai_anon",
+      "key_mode": "none",
+      "endpoint": "https://g4f.space/api/ollama/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "llama3",
+          "Llama 3"
+        ],
+        [
+          "mistral",
+          "Mistral"
+        ]
+      ]
+    },
+    {
+      "id": "g4fpollinations",
+      "name": "Pollinations / G4F (без регистрации)",
+      "key_url": "https://g4f.dev/docs/ready_to_use.html",
+      "type": "openai_anon",
+      "key_mode": "none",
+      "endpoint": "https://g4f.space/api/pollinations/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "openai",
+          "Pollinations Chat (модель выбирает сервис)"
+        ]
+      ]
+    },
+    {
+      "id": "llmfaucet",
+      "name": "LLMFaucet (без регистрации; экспериментальный)",
+      "key_url": "https://llmfaucet.dev/",
+      "type": "openai_anon",
+      "key_mode": "optional",
+      "endpoint": "https://api.llmfaucet.dev/v1/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "auto",
+          "Автовыбор"
+        ],
+        [
+          "auto:smart",
+          "Автовыбор (рассуждение)"
+        ]
+      ]
+    },
+    {
       "id": "gemini",
-      "name": "Google Gemini",
+      "name": "Google Gemini (с регистрацией)",
       "key_url": "https://aistudio.google.com/apikey",
       "type": "gemini",
+      "key_mode": "required",
       "free_policy": "curated",
       "models": [
         [
@@ -25,62 +113,75 @@
           "Gemini 3.1 Flash Lite"
         ],
         [
-          "gemini-2.5-flash-lite",
-          "Gemini 2.5 Flash Lite"
-        ],
-        [
           "gemini-2.5-flash",
           "Gemini 2.5 Flash"
-        ]
-      ]
-    },
-    {
-      "id": "llm7",
-      "name": "LLM7 (без регистрации)",
-      "key_url": "https://llm7.io/",
-      "type": "openai_anon",
-      "endpoint": "https://api.llm7.io/v1/chat/completions",
-      "free_policy": "curated",
-      "models": [
-        [
-          "DeepSeek-V4-Flash-0731",
-          "DeepSeek V4 Flash"
         ],
         [
-          "gemma4:31b",
-          "Gemma 4 31B"
-        ]
-      ]
-    },
-    {
-      "id": "g4fgroq",
-      "name": "G4F Groq (без регистрации)",
-      "key_url": "https://g4f.dev/docs/ready_to_use.html",
-      "type": "openai_anon",
-      "endpoint": "https://g4f.space/api/groq/chat/completions",
-      "free_policy": "curated",
-      "models": [
-        [
-          "openai/gpt-oss-120b",
-          "GPT-OSS 120B"
+          "gemini-2.5-flash-lite",
+          "Gemini 2.5 Flash Lite"
         ]
       ]
     },
     {
       "id": "openrouter",
-      "name": "OpenRouter",
+      "name": "OpenRouter (с регистрацией)",
       "key_url": "https://openrouter.ai/settings/keys",
       "type": "openai",
+      "key_mode": "required",
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "free_policy": "priced_openrouter",
       "catalog_url": "https://openrouter.ai/api/v1/models",
       "models": []
     },
     {
+      "id": "ptero",
+      "name": "Ptero (с регистрацией)",
+      "key_url": "https://ptero.pro/",
+      "type": "openai",
+      "key_mode": "required",
+      "endpoint": "https://ptero.pro/wp-json/mlp/v1/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "deepseek-v4-flash:runware",
+          "DeepSeek V4 Flash"
+        ],
+        [
+          "deepseek-v4.1-flash:free",
+          "DeepSeek V4.1 Flash"
+        ],
+        [
+          "qwen3.7-flash:minirouter",
+          "Qwen 3.7 Flash"
+        ],
+        [
+          "mistral-nemo:minirouter",
+          "Mistral Nemo 12B"
+        ],
+        [
+          "glm-5.3-flash",
+          "GLM 5.3 Flash"
+        ],
+        [
+          "minimax-m3.1-flash:runware",
+          "MiniMax M3.1 Flash"
+        ],
+        [
+          "ling-3.0-flash:free",
+          "Ling 3.0 Flash"
+        ],
+        [
+          "apodex-1.1-mini:free",
+          "Apodex 1.1 Mini"
+        ]
+      ]
+    },
+    {
       "id": "cloudflare",
-      "name": "Cloudflare Workers AI",
+      "name": "Cloudflare Workers AI (с регистрацией)",
       "key_url": "https://dash.cloudflare.com/",
       "type": "cloudflare",
+      "key_mode": "required",
       "free_policy": "curated",
       "models": [
         [
@@ -94,6 +195,44 @@
         [
           "@cf/nvidia/nemotron-3-120b-a12b",
           "Nemotron 3 120B"
+        ]
+      ]
+    },
+    {
+      "id": "llm7",
+      "name": "LLM7 (с регистрацией)",
+      "key_url": "https://dash.llm7.io/",
+      "type": "openai",
+      "key_mode": "required",
+      "endpoint": "https://api.llm7.io/v1/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "default",
+          "LLM7 Default (маршрутизатор)"
+        ],
+        [
+          "fast",
+          "LLM7 Fast (маршрутизатор)"
+        ]
+      ]
+    },
+    {
+      "id": "rok",
+      "name": "ROK (с регистрацией)",
+      "key_url": "https://rok.rokteam.org/developers",
+      "type": "openai",
+      "key_mode": "required",
+      "endpoint": "https://rokremasteredapi.rokteam.org/v1/chat/completions",
+      "free_policy": "curated",
+      "models": [
+        [
+          "rok-hermes",
+          "ROK Hermes"
+        ],
+        [
+          "rok-hermes-raw",
+          "ROK Hermes Raw"
         ]
       ]
     }

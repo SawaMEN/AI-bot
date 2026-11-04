@@ -57,7 +57,7 @@ ol{padding-left:22px}li{margin:6px 0}.provider{padding:14px;border:1px solid var
 
 <section id="models">
 <h2>3. Бесплатные ИИ-сервисы</h2>
-<p>Выберите сервис, перейдите по ссылке для получения бесплатного ключа и включите его. Провайдер ИИ — это <strong>не</strong> сообщество ВК. Не активируйте платный биллинг.</p>
+<p>Сначала идут бесплатные API <strong>без регистрации</strong>, затем API <strong>с регистрацией</strong>. Для необязательного ключа его можно добавить позже. Не активируйте платный биллинг.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="default">
 <label>Основная модель <select name="model">{{range .Allowed}}<option value="{{.}}">{{index $.Labels .}}</option>{{end}}</select></label>
 <button type="submit" {{if not .Allowed}}disabled{{end}}>Сохранить основную модель</button>
@@ -65,13 +65,13 @@ ol{padding-left:22px}li{margin:6px 0}.provider{padding:14px;border:1px solid var
 {{range .Providers}}
 <div class="provider">
 <h3><span class="status {{if .Enabled}}on{{else}}off{{end}}">{{if .Enabled}}✓ ВКЛ{{else}}✗ ВЫКЛ{{end}}</span> — {{.Name}}</h3>
-<p><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">Где получить API-ключ</a></p>
+<p><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{if eq .KeyMode "none"}}Документация бесплатного API{{else if eq .KeyMode "optional"}}Необязательный бесплатный ключ{{else}}Получить бесплатный API-ключ (с регистрацией){{end}}</a></p>
 <form method="post">
 <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="provider"><input type="hidden" name="provider" value="{{.ID}}">
 <label><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}>Включить этот ИИ</label>
 <label><input type="checkbox" name="auto" {{if .Auto}}checked{{end}}>Подбирать подтверждённые бесплатные модели автоматически</label>
-<div><label>API-ключ <input type="password" name="api_key" placeholder="Пусто — сохранить прежний" maxlength="500" autocomplete="new-password"></label>
-<label><input type="checkbox" name="remove_key">Удалить сохранённый ключ</label></div>
+{{if ne .KeyMode "none"}}<div><label>API-ключ{{if eq .KeyMode "optional"}} (необязателен){{else}} (с регистрацией){{end}} <input type="password" name="api_key" placeholder="Пусто — сохранить прежний" maxlength="500" autocomplete="new-password"></label>
+<label><input type="checkbox" name="remove_key">Удалить сохранённый ключ</label></div>{{end}}
 {{if eq .ID "cloudflare"}}<label>Cloudflare Account ID <input name="account_id" placeholder="ID аккаунта, не домен" maxlength="100"></label>{{end}}
 <button type="submit">Сохранить этот сервис</button>
 </form>

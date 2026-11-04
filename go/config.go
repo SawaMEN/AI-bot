@@ -117,14 +117,16 @@ func saveConfig(cfg Config) error {
 }
 func validHTTPS(u string) bool {return strings.HasPrefix(u,"https://")}
 
-// Enable approved anonymous services, keep configured Gemini/OpenRouter/Cloudflare,
-// and retire providers that are no longer supported.
-// An explicitly disabled anonymous provider remains disabled.
+// Enable approved keyless services, preserve existing credentials, and
+// retire providers that are no longer supported. Explicit disables persist.
 func enableKeylessCatalog(cfg *Config) {
  c,err:=newCatalog();if err!=nil{return}
  if cfg.Providers==nil{cfg.Providers=map[string]ProviderConfig{}}
  for id:=range cfg.Providers{if _,ok:=c.Specs[id];!ok{delete(cfg.Providers,id)}}
- for _,id:=range []string{"llm7","g4fgroq"}{
+ for _,id:=range c.Order{
+  spec:=c.Specs[id]
+  // Opt-in experimental router to avoid spending its small anonymous quota.
+  if spec.requiresKey()||id=="llmfaucet"{continue}
   if _,ok:=cfg.Providers[id];!ok{cfg.Providers[id]=ProviderConfig{Enabled:true}}
  }
  models:=make([]string,0,len(cfg.EnabledModels))

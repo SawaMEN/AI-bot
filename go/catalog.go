@@ -28,7 +28,13 @@ type ProviderSpec struct {
  CatalogURL string `json:"catalog_url"`
  FreePolicy string `json:"free_policy"`
  AnonymousKey string `json:"anonymous_key"`
+ KeyMode string `json:"key_mode"`
  Models [][]string `json:"models"`
+}
+// Keyless and optional-token APIs remain usable without an account.
+func (p ProviderSpec) requiresKey() bool {
+ switch p.KeyMode {case "none","optional":return false;case "required":return true}
+ return p.Type!="openai_anon"&&p.AnonymousKey==""
 }
 type Catalog struct {
  Specs map[string]ProviderSpec
@@ -45,6 +51,7 @@ func newCatalog() (*Catalog,error) {
  c:=&Catalog{Specs:map[string]ProviderSpec{},verified:map[string][]Model{},client:&http.Client{Timeout:20*time.Second}}
  for _,p:=range blob.Providers {
   if p.ID==""||!validHTTPS(p.KeyURL)|| ((p.Type=="openai"||p.Type=="openai_anon")&&!validHTTPS(p.Endpoint)) {return nil,fmt.Errorf("неверный провайдер %q",p.ID)}
+  if p.KeyMode!=""&&p.KeyMode!="none"&&p.KeyMode!="optional"&&p.KeyMode!="required"{return nil,fmt.Errorf("неверный режим ключа %q",p.ID)}
   c.Specs[p.ID]=p;c.Order=append(c.Order,p.ID)
  }
  return c,nil
@@ -82,7 +89,7 @@ func russianCandidate(id string)bool{
  // contain hundreds of unknown or specialist models. Only known multilingual
  // text families are eligible for the real authenticated Russian probe.
  for _,family:=range []string{
-  "gpt-oss","gemini","qwen","glm-","deepseek","mistral","mixtral",
+  "gpt-oss","gemini","qwen","glm-","deepseek","mistral","mixtral","claude",
   "gemma","llama","kimi","minimax","nemotron","command-r","aya-",
   "phi-4","phi-3","internlm","hunyuan","ernie","doubao","yi-",
   "baichuan","step-","granite","olmo","exaone","ling-","seed-oss",
@@ -101,7 +108,7 @@ func (c *Catalog) candidates(cfg Config) []string {
  c.mu.RLock();defer c.mu.RUnlock()
  result:=[]string{};seen:=map[string]bool{}
  for _,name:=range c.Order {
-  spec:=c.Specs[name];settings,ok:=cfg.Providers[name];if !ok||!settings.Enabled||(settings.APIKey==""&&spec.AnonymousKey==""&&spec.Type!="openai_anon"){continue}
+  spec:=c.Specs[name];settings,ok:=cfg.Providers[name];if !ok||!settings.Enabled||(spec.requiresKey()&&settings.APIKey==""&&spec.AnonymousKey==""){continue}
   if name=="cloudflare"&&settings.CloudflareAccount==""{continue}
   verified:=map[string]bool{};for _,m:=range c.verified[name]{verified[m.ID]=true}
   add:=func(model string) {
@@ -172,6 +179,14 @@ func freeItem(p ProviderSpec,item map[string]any)bool{
  }
  return false
 }
+// A conservative ranking of popular conversational model families.
+// It affects only ordering, never free-tier eligibility.
+func modelPopularityRank(id string)int{
+ name:=strings.ToLower(id)
+ families:=[]string{"gpt-","gemini","claude","deepseek","qwen","llama","grok","mistral","gemma","glm-","nemotron","minimax","kimi","ling-"}
+ for i,family:=range families{if strings.Contains(name,family){return i}}
+ return len(families)
+}
 func (c *Catalog) discover(ctx context.Context,p ProviderSpec,key string)([]Model,error) {
  req,err:=http.NewRequestWithContext(ctx,"GET",p.CatalogURL,nil);if err!=nil{return nil,err}
  if key!=""{req.Header.Set("Authorization","Bearer "+key)}
@@ -193,7 +208,10 @@ func (c *Catalog) discover(ctx context.Context,p ProviderSpec,key string)([]Mode
   if title==""{title=id};if len(title)>80{title=title[:80]}
   models=append(models,Model{id,title});if len(models)>=150{break}
  }
- sort.Slice(models,func(i,j int)bool{return models[i].Label<models[j].Label})
+ sort.SliceStable(models,func(i,j int)bool{
+  a,b:=modelPopularityRank(models[i].ID),modelPopularityRank(models[j].ID)
+  if a!=b{return a<b};return models[i].Label<models[j].Label
+ })
  return models,nil
 }
 // Refresh dynamic catalogs in parallel. A slow/offline provider must not
