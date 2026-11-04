@@ -119,6 +119,7 @@ func (w Wizard) setupGuide(cfg *Config,c *Catalog)bool{
  }else{
   fmt.Fprintf(w.out,"✓ ВК уже настроен (ID %d). Можно изменить его позже в «Подключения».\n",cfg.GroupID)
  }
+ if cfg.AdminVKID==0&&cfg.VKToken!=""&&cfg.GroupID>0{w.configureAdminVK(cfg)}
  if cfg.VKToken==""||cfg.GroupID<1{
   cfg.VKToken=originalVKToken;cfg.GroupID=originalGroup
   fmt.Fprintln(w.out,"Завершите подключение ВК, прежде чем запускать бота.")
@@ -131,11 +132,11 @@ func (w Wizard) setupGuide(cfg *Config,c *Catalog)bool{
   if cfg.Providers[id].Enabled{state="Настроен"}
   options=append(options,menuOption{i+1,p.Name,"Ключ: "+p.KeyURL,state})
  }
- options=append(options,menuOption{0,"Настроить позже","Сохранить текущие настройки ВК",""})
- selected:=w.chooseMenu("ВЫБЕРИТЕ ИИ-СЕРВИС","Сначала проверим его доступность, затем введём ключ и проверим русский язык.",options)
+ options=append(options,menuOption{0,"Использовать уже включённые бесплатные ИИ","Без регистрации и ключа. Проверка моделей запустится автоматически","Рекомендуется"})
+ selected:=w.chooseMenu("ДОПОЛНИТЕЛЬНЫЕ ИИ-СЕРВИСЫ","Бесплатные сервисы без регистрации уже включены. Выберите 0 для запуска без API-ключа или настройте дополнительный сервис.",options)
  if selected==0{
   fmt.Fprintln(w.out,"ИИ можно добавить через «Подключения» → «ИИ-провайдеры».")
-  return cfg.VKToken!=old.VKToken||cfg.GroupID!=old.GroupID
+  return cfg.VKToken!=old.VKToken||cfg.GroupID!=old.GroupID||cfg.AdminVKID!=old.AdminVKID
  }
  id:=c.Order[selected-1]
  if !w.configureProviderWith(cfg,c,id,1,probeDirectHTTPS,newAI(c).generate){

@@ -17,6 +17,7 @@ type ProviderConfig struct {
 type Config struct {
  VKToken string `json:"vk_token"`
  GroupID int64 `json:"group_id"`
+ AdminVKID int64 `json:"admin_vk_id,omitempty"`
  Trigger string `json:"trigger"`
  ContextMessages int `json:"context_messages"`
  ContextHours int `json:"context_hours"`
@@ -37,7 +38,10 @@ func defaults() Config {return Config{Trigger:"бот",ContextMessages:30,Contex
 func configPath() string {if x:=os.Getenv("AIBOT_CONFIG");x!="" {return x};return "/etc/ai-bot/config.json"}
 func dataPath() string {if x:=os.Getenv("AIBOT_DATA");x!="" {return x};return "/var/lib/ai-bot/history.db"}
 func loadConfig() (Config,error) {
- cfg:=defaults();b,err:=os.ReadFile(configPath());if errors.Is(err,os.ErrNotExist){enableKeylessCatalog(&cfg);return cfg,nil};if err!=nil{return cfg,err}
+ cfg:=defaults();b,err:=os.ReadFile(configPath());if errors.Is(err,os.ErrNotExist){
+  if err:=mergeVKAdminOverlay(&cfg);err!=nil{return cfg,err}
+  enableKeylessCatalog(&cfg);return cfg,nil
+ };if err!=nil{return cfg,err}
  if err:=json.Unmarshal(b,&cfg);err!=nil{return cfg,err}
  if cfg.Trigger==""{cfg.Trigger="бот"};if cfg.Providers==nil{cfg.Providers=map[string]ProviderConfig{}}
  // Legacy Python v1 used a single provider/api_key/model. Migrate in memory,
@@ -70,10 +74,15 @@ func loadConfig() (Config,error) {
    }
   }
  }
+ if err:=mergeVKAdminOverlay(&cfg);err!=nil{return cfg,err}
  enableKeylessCatalog(&cfg)
+ if cfg.AdminVKID<0||cfg.AdminVKID>2147483647{return cfg,errors.New("неверный admin_vk_id")}
  if cfg.ContextMessages<1||cfg.ContextMessages>100{return cfg,errors.New("недопустимый context_messages")}
  if cfg.MaxRequestsHour<1||cfg.MaxUserRequestsHour<1||cfg.MaxChatRequestsHour<1{return cfg,errors.New("неверные лимиты API")}
- if cfg.ContextHours<1||cfg.RetentionDays<1{return cfg,errors.New("неверный срок хранения")}
+ if cfg.ContextHours<1||cfg.ContextHours>168||cfg.RetentionDays<1||cfg.RetentionDays>30{return cfg,errors.New("неверный срок хранения")}
+ if cfg.CooldownSeconds<0||cfg.CooldownSeconds>3600{return cfg,errors.New("неверный cooldown_seconds")}
+ if cfg.MaxRequestsHour>10000||cfg.MaxUserRequestsHour>1000||cfg.MaxChatRequestsHour>1000{return cfg,errors.New("превышен лимит запросов")}
+ if cfg.Trigger==""||len([]rune(cfg.Trigger))>40{return cfg,errors.New("неверное обращение к боту")}
  return cfg,nil
 }
 func saveConfig(cfg Config) error {
@@ -125,8 +134,8 @@ func enableKeylessCatalog(cfg *Config) {
  for id:=range cfg.Providers{if _,ok:=c.Specs[id];!ok{delete(cfg.Providers,id)}}
  for _,id:=range c.Order{
   spec:=c.Specs[id]
-  // Opt-in experimental router to avoid spending its small anonymous quota.
-  if spec.requiresKey()||id=="llmfaucet"{continue}
+  // All documented free keyless routes are enabled on initial setup.
+  if spec.requiresKey(){continue}
   if _,ok:=cfg.Providers[id];!ok{cfg.Providers[id]=ProviderConfig{Enabled:true}}
  }
  models:=make([]string,0,len(cfg.EnabledModels))

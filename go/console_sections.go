@@ -35,6 +35,7 @@ func(w Wizard) consoleVKHub(cfg *Config,c *Catalog){
   if cfg.VKToken!=""&&cfg.GroupID>0{state=fmt.Sprintf("ID %d",cfg.GroupID)}
   action:=w.chooseMenu("ВКОНТАКТЕ","Подключение сообщества и обработка событий — отдельно от ИИ и функций.",[]menuOption{
    {1,"Подключить сообщество","Токен и числовой ID",state},
+    {4,"Администратор бота","ID, короткое имя или ссылка ВК — отдельная кнопка в личных сообщениях",fmt.Sprintf("VK ID: %d",cfg.AdminVKID)},
    {2,"Настроить события","Long Poll: входящие сообщения и кнопки",""},
    {3,"Инструкция по ВК","Как включить сообщения и добавить бота в беседу",""},
    {0,"Назад","Главное меню",""},
@@ -44,6 +45,7 @@ func(w Wizard) consoleVKHub(cfg *Config,c *Catalog){
   case 1:w.setupVK(cfg);applySettings(w,*cfg,c)
   case 2:w.configureVKEvents(*cfg)
   case 3:fmt.Fprintln(w.out,vkSetupGuide(cfg.GroupID))
+   case 4:w.configureAdminVK(cfg);applySettings(w,*cfg,c)
   }
   w.pauseMenu()
  }

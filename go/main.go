@@ -76,8 +76,24 @@ func(w Wizard) setupVK(cfg *Config){
  fmt.Fprintln(w.out,"Пошаговая инструкция доступна отдельно в разделе «Помощь».")
  cfg.VKToken=w.secret("Токен ВК",cfg.VKToken)
  cfg.GroupID=int64(w.integer("Числовой ID сообщества",int(cfg.GroupID),1,999999999))
+ w.configureAdminVK(cfg)
  fmt.Fprintf(w.out,"Токен: %s; сообщество: %d\n",readyLabel(cfg.VKToken!=""),cfg.GroupID)
  fmt.Fprintln(w.out,"Далее: включите Long Poll (получение сообщений и нажатия кнопок).")
+}
+
+// VK bot administrator is an explicitly configured personal VK account,
+// not a chat member with group-administrator permissions.
+func (w Wizard) configureAdminVK(cfg *Config){
+ current:=""
+ if cfg.AdminVKID>0{current=strconv.FormatInt(cfg.AdminVKID,10)}
+ input:=w.ask("Администратор бота: ID, @ник или ссылка vk.com/id... (Enter — оставить, - — сбросить)",current)
+ if input==""{return}
+ if input=="-"{cfg.AdminVKID=0;fmt.Fprintln(w.out,"Администратор бота не назначен.");return}
+ ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second);defer cancel()
+ id,err:=resolveVKAdminID(ctx,newVK(*cfg),input)
+ if err!=nil{fmt.Fprintln(w.out,"Не удалось назначить администратора:",err);return}
+ cfg.AdminVKID=id
+ fmt.Fprintf(w.out,"✓ Администратор бота: vk.com/id%d. Только он получит меню администратора в личных сообщениях.\n",id)
 }
 
 func contains(list []string,key string)bool{for _,s:=range list{if s==key{return true}};return false}
@@ -295,7 +311,7 @@ func run()error{
  }
  if os.Geteuid()!=0{return errors.New("для управления выполните sudo aibot")}
  switch command{
- case "version","--version":fmt.Println("AI-bot Go v1.5.15")
+ case "version","--version":fmt.Println("AI-bot Go v1.6.0")
  case "setup":
   if w.setupGuide(&cfg,catalog){applySettings(w,cfg,catalog)}
   fmt.Fprintln(w.out,"\n"+nextSetupStep(cfg,catalog))

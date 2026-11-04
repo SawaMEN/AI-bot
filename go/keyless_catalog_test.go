@@ -44,7 +44,7 @@ func TestMigrationKeepsGeminiAndRemovesRetiredProviders(t *testing.T){
  cfg.AutoModelsProviders=[]string{"groq","gemini"}
  cfg.DefaultModel="groq:openai/gpt-oss-20b"
  enableKeylessCatalog(&cfg)
- if len(cfg.Providers)!=6||cfg.Providers["gemini"].APIKey!="gemini-secret"{t.Fatal("Gemini credentials lost or old provider retained",cfg.Providers)}
+ if len(cfg.Providers)!=7||cfg.Providers["gemini"].APIKey!="gemini-secret"{t.Fatal("Gemini credentials lost or old provider retained",cfg.Providers)}
  if cfg.Providers["llm7"].Enabled{t.Fatal("explicit disable ignored")}
  if !cfg.Providers["g4fgroq"].Enabled{t.Fatal("anonymous default not enabled")}
  if len(cfg.EnabledModels)!=1||cfg.EnabledModels[0]!="gemini:gemini-2.5-flash"{t.Fatal("retired model remains",cfg.EnabledModels)}
