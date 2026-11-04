@@ -25,7 +25,7 @@ var vkAdminWritableFields=map[string]bool{
  "cooldown_seconds":true,"max_requests_hour":true,
  "max_user_requests_hour":true,"max_chat_requests_hour":true,
  "default_model":true,"enabled_models":true,"auto_models_providers":true,
- "group_id":true,"vk_token":true,
+ "group_id":true,"vk_token":true,"admin_vk_id":true,
 }
 func vkAdminOverlayPath()string{return filepath.Join(filepath.Dir(dataPath()),"vk-admin-settings.json")}
 
