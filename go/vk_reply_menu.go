@@ -203,7 +203,7 @@ func vkReplyCommand(payload json.RawMessage)string{
  fields:=strings.Fields(strings.ToLower(command))
  if len(fields)==0{return ""}
  switch fields[0]{
- case "меню","старт","вопрос","помощь","настройки","права","модели","модель","ии","функции","диалог","статистика",
+ case "меню","старт","вопрос","помощь","настройки","права","модели","модель","ии","функции","диалог","статистика","админ",
   "выбор","поиск","стиль","контекст","резерв","сброс","сбросить","подтвердить":
   return command
  }
@@ -213,6 +213,7 @@ func vkReplyCommand(payload json.RawMessage)string{
 func vkReplyLabel(text string)string{
  switch strings.ToLower(strings.TrimSpace(text)){
  case "🏠 меню","🏠 главное меню":return "меню"
+ case "🛠 меню админа":return "админ"
  case "⚙ мои настройки","⚙ настройки":return "настройки"
  case "🤖 выбрать ии","🤖 модель","🤖 выбрать модель":return "модели"
  case "🤖 ии","🤖 настроить ии":return "ии"
