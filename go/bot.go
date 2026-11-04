@@ -277,11 +277,11 @@ func runBot(ctx context.Context,cfg Config)error{
   for {select{
   case <-workerCtx.Done():return
   case <-timer.C:
-   b.store.cleanup(cfg.RetentionDays)
+   b.store.cleanup(b.currentConfig().RetentionDays)
    ctx2,cancel:=context.WithTimeout(workerCtx,40*time.Second)
    errorsBy:=catalog.refresh(ctx2,b.currentConfig());cancel()
    if len(errorsBy)>0{log.Printf("Каталог: %v",errorsBy)}
-   timer.Reset(catalogRetryDelay(errorsBy,len(catalog.enabled(cfg))))
+   timer.Reset(catalogRetryDelay(errorsBy,len(catalog.enabled(b.currentConfig()))))
   }}
  }()
  // VK API calls remain outside main event reception for AI. Button callbacks
