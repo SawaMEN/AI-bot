@@ -21,8 +21,10 @@ func (ai *AI) generate(ctx context.Context,cfg Config,key string,messages []Mess
  if !enabled{return "",errors.New("модель запрещена или больше не бесплатна")}
  provider,model,err:=splitModel(key);if err!=nil{return "",err}
  spec:=ai.catalog.Specs[provider];setting:=cfg.Providers[provider];token:=setting.APIKey;if token==""{token=spec.AnonymousKey}
+ if spec.Type=="openai_anon"{token=""}
  endpoint:=spec.Endpoint;body:=map[string]any{"model":model,"messages":messages,"max_tokens":1500}
- headers:=map[string]string{"Authorization":"Bearer "+token}
+ headers:=map[string]string{}
+ if token!=""{headers["Authorization"]="Bearer "+token}
  if spec.Type=="gemini"{
   endpoint="https://generativelanguage.googleapis.com/v1beta/models/"+url.PathEscape(model)+":generateContent"
   var prompt strings.Builder;for _,m:=range messages{prompt.WriteString(strings.ToUpper(m.Role)+":\n"+m.Content+"\n\n")}

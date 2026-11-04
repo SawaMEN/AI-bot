@@ -30,7 +30,7 @@ func TestAdaptiveModelRankPrefersReliableFastModel(t *testing.T){
 func TestModelComplexityAndManualOverrides(t *testing.T){
  if !complexQuestion("Сравни производительность двух алгоритмов")||complexQuestion("Привет"){t.Fatal("wrong query complexity classifier")}
  if modelHeuristic("groq:openai/gpt-oss-120b",true)<=modelHeuristic("groq:openai/gpt-oss-20b",true){t.Fatal("complex question needs large model preference")}
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  cfg.DefaultModel="groq:openai/gpt-oss-20b"
  s,err:=openStore(filepath.Join(t.TempDir(),"prefs.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
@@ -92,7 +92,7 @@ func TestWebSearchMergesTwoSourcesAndPrioritizesRelevantResults(t *testing.T){
 }
 
 func TestVKOptionalNamesAreSanitizedAndCached(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  s,err:=openStore(filepath.Join(t.TempDir(),"names.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
  var calls int

@@ -11,7 +11,7 @@ import (
 )
 
 func TestAIEndpointRoutes(t *testing.T){
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  if aiProviderEndpoint(c.Specs["gemini"])!="https://generativelanguage.googleapis.com/"{t.Fatal("wrong Gemini hostname")}
  if aiProviderEndpoint(c.Specs["cloudflare"])!="https://api.cloudflare.com/"{t.Fatal("wrong Cloudflare hostname")}
  if !strings.Contains(aiProviderEndpoint(c.Specs["groq"]),"api.groq.com"){t.Fatal("wrong Groq hostname")}
@@ -30,7 +30,7 @@ func TestDirectProbeRejectsInvalidCertificate(t *testing.T){
 }
 func TestServerAIConnectivityUsesRealModelProbe(t *testing.T){
  cfg:=testCfg();cfg.SearchEnabled=false
- c,_:=newCatalog()
+ c,_:=newTestCatalog()
  dnsCount,apiCount:=0,0
  var output bytes.Buffer
  err:=checkAIConnectivityWith(context.Background(),cfg,c,&output,false,
@@ -49,7 +49,7 @@ func TestServerAIConnectivityUsesRealModelProbe(t *testing.T){
  if !strings.Contains(output.String(),"успешно 2"){t.Fatal(output.String())}
 }
 func TestServerAINetworkOnlyDoesNotSpendQuota(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  var out bytes.Buffer
  apiCalled:=false
  err:=checkAIConnectivityWith(context.Background(),cfg,c,&out,true,
@@ -59,7 +59,7 @@ func TestServerAINetworkOnlyDoesNotSpendQuota(t *testing.T){
  if !strings.Contains(out.String(),"без запросов к ИИ"){t.Fatal(out.String())}
 }
 func TestServerAIAttemptsHTTPViaProxyWhenDirectNetworkFails(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  calls:=0
  var out bytes.Buffer
  err:=checkAIConnectivityWith(context.Background(),cfg,c,&out,false,
@@ -71,7 +71,7 @@ func TestServerAIAttemptsHTTPViaProxyWhenDirectNetworkFails(t *testing.T){
  }
 }
 func TestServerAIReportsAuthenticationAndLanguageSeparately(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  for _,tc:=range []struct{answer string;apiErr error;want string}{
   {"",errors.New("ключ отклонён (HTTP 401)"),"Ошибка API/ключа/квоты"},
   {"The capital city is Moscow.",nil,"проверка русского языка не прошла"},
@@ -84,7 +84,7 @@ func TestServerAIReportsAuthenticationAndLanguageSeparately(t *testing.T){
  }
 }
 func TestServerAINoEnabledProviders(t *testing.T){
- cfg:=defaults();c,_:=newCatalog()
+ cfg:=defaults();c,_:=newTestCatalog()
  err:=checkAIConnectivityWith(context.Background(),cfg,c,&bytes.Buffer{},true,
   func(context.Context,string)(string,error){t.Fatal("unexpected network request");return "",nil},
   nil)

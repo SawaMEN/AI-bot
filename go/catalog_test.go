@@ -8,14 +8,14 @@ import (
  "encoding/json"
 )
 func TestRegistryFreeOnly(t *testing.T) {
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  if len(c.Specs)<9{t.Fatal("provider registry incomplete")}
  for _,bad:=range []string{"openrouter:gpt-4o","openai:gpt-4o","groq:paid-model","groq:llama-3.1-8b-instant","openrouter:openrouter/free"} {
   p,id,e:=splitModel(bad);if e==nil&&c.modelAllowedID(p,id){t.Errorf("paid model allowed %s",bad)}
  }
 }
 func TestCatalogPrice(t *testing.T) {
- c,_:=newCatalog();openrouter:=c.Specs["openrouter"]
+ c,_:=newTestCatalog();openrouter:=c.Specs["openrouter"]
  cases:=[]struct{data string;ok bool}{
   {`{"id":"free/abc:free","pricing":{"prompt":"0","completion":"0"}}`,true},
   {`{"id":"paid/abc:free","pricing":{"prompt":"0","completion":"0.1"}}`,false},
@@ -26,7 +26,7 @@ func TestCatalogPrice(t *testing.T) {
  if freeItem(p,map[string]any{"id":"openai/gpt","pricing":map[string]any{"input":0.0,"output":0.1}}){t.Fatal("paid Pollinations allowed")}
 }
 func TestDynamicDiscoveryFailClosed(t *testing.T){
- c,_:=newCatalog()
+ c,_:=newTestCatalog()
  srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   w.Write([]byte(`{"data":[{"id":"qwen/model:free","pricing":{"prompt":"0","completion":"0"}},{"id":"b/model:free","pricing":{"prompt":"0.1","completion":"0"}}]}`))
  }));defer srv.Close()

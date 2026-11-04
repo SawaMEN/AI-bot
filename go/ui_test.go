@@ -11,7 +11,7 @@ func TestReadableSwitchAndSetupStatus(t *testing.T){
  if switchLabel(true)!="✓ ВКЛ"||switchLabel(false)!="✗ ВЫКЛ"{
   t.Fatal("unreadable switch labels")
  }
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  cfg:=defaults()
  if !strings.Contains(nextSetupStep(cfg,c),"пункт 1"){t.Fatal("VK onboarding step missing")}
  if !strings.Contains(setupSummary(cfg,c),"✗ Не настроено"){t.Fatal("missing initial X markers")}
@@ -41,7 +41,7 @@ func TestVKGuideExplainsCommunityVersusChat(t *testing.T){
 }
 
 func TestMenuNavigationHasGuidesAndExit(t *testing.T){
- cfg:=defaults();cfg.SearchEnabled=false;catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ cfg:=defaults();cfg.SearchEnabled=false;catalog,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  var output bytes.Buffer
  wizard:=Wizard{in:bufio.NewReader(strings.NewReader("7\n0\n")),out:&output}
  menu(wizard,cfg,catalog)
@@ -60,7 +60,7 @@ func TestMenuNavigationHasGuidesAndExit(t *testing.T){
 func TestDisabledProviderKeepsExistingSecret(t *testing.T){
  cfg:=defaults();cfg.Providers["groq"]=ProviderConfig{Enabled:true,APIKey:"private-api-key"}
  cfg.AutoModelsProviders=[]string{"groq"}
- catalog,_:=newCatalog()
+ catalog,_:=newTestCatalog()
  var output bytes.Buffer
  wizard:=Wizard{in:bufio.NewReader(strings.NewReader("3\n")),out:&output}
  wizard.provider(&cfg,catalog,"groq")

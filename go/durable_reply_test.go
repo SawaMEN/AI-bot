@@ -31,7 +31,7 @@ func TestVKReplayDoesNotRegenerateAIOrChargeTwice(t *testing.T){
  defer func(){vkAPIBaseURL=old}()
  cfg:=testCfg()
  cfg.FreeFallback=false
- catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ catalog,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  spec:=catalog.Specs["groq"];spec.Endpoint=server.URL+"/v1/chat/completions";catalog.Specs["groq"]=spec
  store,err:=openStore(filepath.Join(t.TempDir(),"history.db"));if err!=nil{t.Fatal(err)}
  defer store.close()

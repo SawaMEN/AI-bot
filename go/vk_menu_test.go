@@ -13,7 +13,7 @@ import (
 )
 
 func TestVKGuidedBoardsStayInsideLimits(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  for name,raw:=range map[string]string{
   "главная":mainBoard(),
   "под ответом":answerBoard(),
@@ -41,7 +41,7 @@ func TestVKGuidedBoardsStayInsideLimits(t *testing.T){
  }
 }
 func TestVKHomeAndSettingsNavigation(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  store,err:=openStore(filepath.Join(t.TempDir(),"vk-menu.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
  v:=newVK(cfg)
@@ -72,7 +72,7 @@ func TestVKPrivateMenuDoesNotRequireMention(t *testing.T){
  if ok{t.Fatal("unmentioned group menu would spam the group")}
 }
 func TestVKGroupConfigMutationsRequireAdmin(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  store,err:=openStore(filepath.Join(t.TempDir(),"vk-admin.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
  var allowed atomic.Bool
@@ -95,7 +95,7 @@ func TestVKGroupConfigMutationsRequireAdmin(t *testing.T){
  if store.getPref("chat",peer).Search!=""{t.Fatal("reset confirmation failed")}
 }
 func TestVKLegacyCallbacksInstallPermanentPrivateMenu(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  store,err:=openStore(filepath.Join(t.TempDir(),"vk-edit.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
  var edits,sends,snacks atomic.Int32
@@ -126,7 +126,7 @@ func TestVKLegacyCallbacksInstallPermanentPrivateMenu(t *testing.T){
  if privateInline||groupInline{t.Fatalf("both private and group must use persistent keyboards (private=%v group=%v)",privateInline,groupInline)}
 }
 func TestVKMenuModelPagesRetainAutoAndBack(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  cfg.AutoModelsProviders=[]string{"groq","zai"}
  var all [][]struct{Action struct{Label string `json:"label"`;Payload string `json:"payload"`} `json:"action"`}
  raw:=modelBoard(c,cfg,1,false)

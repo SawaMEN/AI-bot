@@ -15,7 +15,7 @@ import (
 )
 
 func TestConsoleMainMenuKeepsAIAndToolsSeparate(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  got:=consoleMainOptions(cfg,c)
  titles:=map[int]string{}
  for _,o:=range got{
@@ -31,7 +31,7 @@ func TestConsoleMainMenuKeepsAIAndToolsSeparate(t *testing.T){
 }
 
 func TestConsoleFunctionsAndVKHubsHaveSafeBackNavigation(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  for _,section:=range []struct{name string;run func(Wizard,*Config,*Catalog)}{
   {"функции",func(w Wizard,cfg *Config,c *Catalog){w.consoleFunctionsHub(cfg,c)}},
   {"вк",func(w Wizard,cfg *Config,c *Catalog){w.consoleVKHub(cfg,c)}},
@@ -44,7 +44,7 @@ func TestConsoleFunctionsAndVKHubsHaveSafeBackNavigation(t *testing.T){
 }
 
 func TestVKGroupBottomKeyboardCoversAllScreens(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  menus:=map[string]string{
   "home":replyGroupMainBoard(),
   "chat":replyGroupChatBoard(),
@@ -97,7 +97,7 @@ func TestVKGroupKeyboardTextTapDoesNotRequireMention(t *testing.T){
 }
 
 func TestVKGroupKeyboardCannotEscalateChatPermissions(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  store,err:=openStore(filepath.Join(t.TempDir(),"chat.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
  var admin atomic.Bool

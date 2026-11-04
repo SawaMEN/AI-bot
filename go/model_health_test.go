@@ -13,7 +13,7 @@ import (
 
 func TestHealthShowsOnlyRealWorkingModels(t *testing.T){
  cfg:=testCfg()
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"model-health.json"))
  if len(c.enabled(cfg))!=0{t.Fatal("untested models shown as available")}
  var out bytes.Buffer
@@ -39,7 +39,7 @@ func TestHealthShowsOnlyRealWorkingModels(t *testing.T){
 }
 
 func TestHealthRetriesAndRecoversModels(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  c.health=newModelHealth(filepath.Join(t.TempDir(),"model-health.json"))
  var out bytes.Buffer
  calls:=0
@@ -59,7 +59,7 @@ func TestHealthRetriesAndRecoversModels(t *testing.T){
 }
 
 func TestHealthInvalidatedOnKeyAndAccountChange(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog();c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
+ cfg:=testCfg();c,_:=newTestCatalog();c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  key:=cfg.EnabledModels[0]
  if err:=c.health.record(cfg,key,true);err!=nil{t.Fatal(err)}
  if !c.health.available(cfg,key){t.Fatal("saved health not recognized")}
@@ -72,16 +72,16 @@ func TestHealthInvalidatedOnKeyAndAccountChange(t *testing.T){
 
 func TestHealthPersistsWithoutLeakingSecrets(t *testing.T){
  cfg:=testCfg();path:=filepath.Join(t.TempDir(),"health.json")
- c,_:=newCatalog();c.health=newModelHealth(path)
+ c,_:=newTestCatalog();c.health=newModelHealth(path)
  if err:=c.health.record(cfg,cfg.EnabledModels[0],true);err!=nil{t.Fatal(err)}
  data,err:=os.ReadFile(path);if err!=nil{t.Fatal(err)}
  if strings.Contains(string(data),"S3CRET_FAKE_KEY_2026"){t.Fatal("plaintext API key leaked into health cache")}
- c2,_:=newCatalog();c2.health=newModelHealth(path)
+ c2,_:=newTestCatalog();c2.health=newModelHealth(path)
  if got:=c2.enabled(cfg);len(got)!=1{t.Fatal("successful result not recovered from disk",got)}
 }
 
 func TestHealthStaleSuccessIsHidden(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  key:=cfg.EnabledModels[0]
  if err:=c.health.record(cfg,key,true);err!=nil{t.Fatal(err)}
@@ -95,7 +95,7 @@ func TestHealthStaleSuccessIsHidden(t *testing.T){
 }
 
 func TestHealthNoWorkingModels(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog();c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
+ cfg:=testCfg();c,_:=newTestCatalog();c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  var out bytes.Buffer
  err:=scanAvailableModelsWith(context.Background(),cfg,c,&out,true,
   func(context.Context,Config,string,[]Message)(string,error){return "",errors.New("authentication denied")})

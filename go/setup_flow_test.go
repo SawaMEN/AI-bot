@@ -16,7 +16,7 @@ func setupWizardFixture(t *testing.T)(Config,*Catalog){
  cfg.Providers["groq"]=ProviderConfig{Enabled:true,APIKey:"old-valid-key"}
  cfg.AutoModelsProviders=[]string{"groq"}
  cfg.DefaultModel="groq:openai/gpt-oss-20b"
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"model-health.json"))
  return cfg,c
 }

@@ -22,7 +22,7 @@ func buttonLabels(t *testing.T,raw string)[]string{
  return labels
 }
 func TestMenuSeparatesAIFromFeatures(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  checks:=[]struct{name,raw string;present,absent string}{
   {"main private",replyMainBoard(),"🤖 ИИ","Выбрать модель"},
   {"AI private",replyButtonsFor("ии",c,cfg),"Выбрать модель","🔎 Поиск"},
@@ -39,7 +39,7 @@ func TestMenuSeparatesAIFromFeatures(t *testing.T){
  }
 }
 func TestVKShowsNoAPITechnicalInformation(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  store,err:=openStore(filepath.Join(t.TempDir(),"vk.db"));if err!=nil{t.Fatal(err)}
  defer store.close()
@@ -55,7 +55,7 @@ func TestVKShowsNoAPITechnicalInformation(t *testing.T){
 }
 
 func TestVKShowsOnlyPreverifiedRussianModels(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  if len(c.enabled(cfg))!=0{t.Fatal("untested model should be invisible")}
  if strings.Contains(replyButtonsFor("ии",c,cfg),"Выбрать модель"){t.Fatal("unverified AI button should be hidden")}
@@ -68,7 +68,7 @@ func TestVKShowsOnlyPreverifiedRussianModels(t *testing.T){
 func TestExpandedRussianFreeModelDirectorySupportsThirty(t *testing.T){
  cfg:=defaults();cfg.Providers=map[string]ProviderConfig{"openrouter":{Enabled:true,APIKey:"dummy"}}
  cfg.AutoModelsProviders=[]string{"openrouter"}
- c,_:=newCatalog()
+ c,_:=newTestCatalog()
  // The catalog only admits individual free variants with zero *input AND*
  // output pricing, plus a whitelisted multilingual family. Paid/safety/chat-
  // incompatible variants must not appear even if the slug includes :free.

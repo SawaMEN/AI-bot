@@ -15,7 +15,7 @@ import (
 func TestAdminStatsOnlyAggregatesNoSecrets(t *testing.T){
  s,err:=openStore(filepath.Join(t.TempDir(),"stat.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  for i:=0;i<3;i++{
   ok,err:=s.reserveQuota(cfg,42,42);if err!=nil||!ok{t.Fatalf("quota: %v %v",ok,err)}
  }
@@ -33,7 +33,7 @@ func TestAdminStatsOnlyAggregatesNoSecrets(t *testing.T){
 }
 
 func TestVKStatsRejectNonAdminAndAllowAdmin(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  s,err:=openStore(filepath.Join(t.TempDir(),"admin-stat.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
  var isAdmin atomic.Bool
@@ -56,7 +56,7 @@ func TestVKStatsRejectNonAdminAndAllowAdmin(t *testing.T){
 func TestVKBotsPreserveLastOpenSectionAfterAIReply(t *testing.T){
  path:=filepath.Join(t.TempDir(),"ui.db")
  s,err:=openStore(path);if err!=nil{t.Fatal(err)}
- cfg:=testCfg();c,_:=newCatalog();bot:=newBot(cfg,s,c)
+ cfg:=testCfg();c,_:=newTestCatalog();bot:=newBot(cfg,s,c)
  s.rememberMenu(42,"выбор поиска")
  if !strings.Contains(bot.lastKeyboard(42),"Искать"){t.Fatal("search selector reset to home")}
  s.rememberMenu(2000000001,"диалог выбор контекста")
@@ -70,7 +70,7 @@ func TestVKBotsPreserveLastOpenSectionAfterAIReply(t *testing.T){
 }
 
 func TestVKChoiceIntroShowsCurrentSelection(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  s,err:=openStore(filepath.Join(t.TempDir(),"choices.db"));if err!=nil{t.Fatal(err)}
  defer s.close()
  if err:=s.setPref("user",42,"search","off");err!=nil{t.Fatal(err)}
