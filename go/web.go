@@ -23,7 +23,7 @@ import (
 
 //go:embed admin.html
 var adminHTML string
-type webProvider struct{ID,Name,URL string;Enabled,Auto bool}
+type webProvider struct{ID,Name,URL,KeyMode string;Enabled,Auto bool}
 type webField struct{Key,Label string;Value int}
 type webData struct{CSRF,Notice string;Allowed []string;Labels map[string]string;Providers []webProvider;Fields []webField;Search,Fallback bool;Domain string;VKReady bool;GroupID int64;NextStep string}
 func secretToken()string{
@@ -130,7 +130,7 @@ func panelHTTPHandler(c *Catalog,hash,domain string)http.Handler{
   for _,id:=range list{data.Labels[id]=c.label(id)}
   for _,id:=range c.Order{
    p:=c.Specs[id];settings:=current.Providers[id]
-   data.Providers=append(data.Providers,webProvider{id,p.Name,p.KeyURL,settings.Enabled,contains(current.AutoModelsProviders,id)})
+   data.Providers=append(data.Providers,webProvider{id,p.Name,p.KeyURL,p.KeyMode,settings.Enabled,contains(current.AutoModelsProviders,id)})
   }
   data.Fields=[]webField{
    {"context_messages","Макс. сообщений контекста",current.ContextMessages},
@@ -159,7 +159,8 @@ func applyWebForm(cfg *Config,c *Catalog,form url.Values)(string,error){
   if form.Get("remove_key")=="on"{settings.APIKey=""}
   if id=="cloudflare"&&form.Get("account_id")!=""{settings.CloudflareAccount=form.Get("account_id")}
   settings.Enabled=form.Get("enabled")=="on"
-  if settings.Enabled&&settings.APIKey==""&&spec.AnonymousKey==""{return "",errors.New("нужен API-ключ")}
+  if spec.KeyMode=="none"{settings.APIKey=""}
+   if settings.Enabled&&spec.requiresKey()&&settings.APIKey==""&&spec.AnonymousKey==""{return "",errors.New("нужен бесплатный API-ключ (с регистрацией)")}
   cfg.Providers[id]=settings
   cfg.AutoModelsProviders=removeExact(cfg.AutoModelsProviders,id)
   hasManual:=false
