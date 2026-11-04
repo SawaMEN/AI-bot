@@ -91,7 +91,7 @@ func checkAIConnectivityWith(ctx context.Context,cfg Config,c *Catalog,out io.Wr
    fmt.Fprintln(out,"  ✓ Сеть доступна (авторизация и генерация не проверялись)")
    healthy++;continue
   }
-  if settings.APIKey==""&&p.AnonymousKey==""&&p.Type!="openai_anon"{
+  if p.requiresKey()&&settings.APIKey==""&&p.AnonymousKey==""{
    fmt.Fprintln(out,"  ✗ Не указан API-ключ")
    failed++;continue
   }
