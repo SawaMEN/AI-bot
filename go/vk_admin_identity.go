@@ -45,6 +45,7 @@ func parseVKUserReference(raw string)(string,error){
 }
 func normalizeVKScreenName(input string)(string,error){
  name:=strings.TrimSpace(input)
+ if strings.HasSuffix(strings.ToLower(name),".php"){return "",errors.New("это служебная страница, а не профиль ВК")}
  if strings.HasPrefix(strings.ToLower(name),"club")||strings.HasPrefix(strings.ToLower(name),"public")||strings.HasPrefix(strings.ToLower(name),"event"){
   return "",errors.New("укажите профиль человека, не сообщество ВК")
  }
