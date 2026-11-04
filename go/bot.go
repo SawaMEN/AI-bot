@@ -8,6 +8,7 @@ import (
  "io"
  "log"
  "net/url"
+ "os"
  "strings"
  "sync"
  "time"
@@ -29,6 +30,9 @@ func (b *Bot) blockModel(key string,delay time.Duration){
  b.unavailable[key]=time.Now().Add(delay)
 }
 func (b *Bot) currentConfig()Config{
+ // Without an admin overlay, the running bot uses its already validated
+ // startup configuration. This also keeps injected test configs isolated.
+ if _,err:=os.Stat(vkAdminOverlayPath());err!=nil{return b.cfg}
  cfg,err:=loadConfig()
  if err!=nil{log.Printf("VK: ошибка чтения настроек: %v",err);return b.cfg}
  return cfg
