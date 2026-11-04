@@ -134,8 +134,8 @@ func enableKeylessCatalog(cfg *Config) {
  for id:=range cfg.Providers{if _,ok:=c.Specs[id];!ok{delete(cfg.Providers,id)}}
  for _,id:=range c.Order{
   spec:=c.Specs[id]
-  // Opt-in experimental router to avoid spending its small anonymous quota.
-  if spec.requiresKey()||id=="llmfaucet"{continue}
+  // All documented free keyless routes are enabled on initial setup.
+  if spec.requiresKey(){continue}
   if _,ok:=cfg.Providers[id];!ok{cfg.Providers[id]=ProviderConfig{Enabled:true}}
  }
  models:=make([]string,0,len(cfg.EnabledModels))
