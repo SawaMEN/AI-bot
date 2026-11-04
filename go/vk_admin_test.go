@@ -106,3 +106,75 @@ func TestVKAdminKeyboardPrivateAndNotSpoofable(t *testing.T){
  text,handled:=b.adminCommand(context.Background(),cfg,102,102,"админ поиск выкл")
  if !handled||!strings.Contains(text,"нет доступа"){t.Fatal("unauthorized administrator changed settings")}
 }
+
+
+func TestVKAdminCanChangeLiveSettingsFromPrivateMenu(t *testing.T){
+ dir:=t.TempDir()
+ t.Setenv("AIBOT_CONFIG",filepath.Join(dir,"config.json"))
+ t.Setenv("AIBOT_DATA",filepath.Join(dir,"state","history.db"))
+ cfg:=defaults();cfg.AdminVKID=42;cfg.GroupID=777;cfg.VKToken="dummy-community-token"
+ if err:=saveConfig(cfg);err!=nil{t.Fatal(err)}
+ c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ b:=newBot(cfg,nil,c)
+ apply:=func(cmd string){
+  t.Helper()
+  response,handled:=b.adminCommand(context.Background(),b.currentConfig(),42,42,cmd)
+  if !handled||strings.Contains(response,"Ошибка")||strings.Contains(response,"Не удалось"){
+   t.Fatalf("%s -> %q handled=%v",cmd,response,handled)
+  }
+ }
+ apply("админ поиск выкл")
+ apply("админ резерв выкл")
+ apply("админ контекст 20")
+ apply("админ часы 48")
+ apply("админ история 14")
+ apply("админ всего 200")
+ apply("админ пользователь 18")
+ apply("админ беседа 45")
+ apply("админ пауза 5")
+ apply("админ триггер помощник")
+ apply("админ переключить g4fgroq")
+ updated,err:=loadConfig();if err!=nil{t.Fatal(err)}
+ if updated.SearchEnabled||updated.FreeFallback||updated.ContextMessages!=20||updated.ContextHours!=48||updated.RetentionDays!=14||
+  updated.MaxRequestsHour!=200||updated.MaxUserRequestsHour!=18||updated.MaxChatRequestsHour!=45||
+  updated.CooldownSeconds!=5||updated.Trigger!="помощник"||updated.Providers["g4fgroq"].Enabled{
+  t.Fatalf("admin changes did not persist: %+v",updated)
+ }
+ denied,_:=b.adminCommand(context.Background(),b.currentConfig(),43,43,"админ контекст 10")
+ if !strings.Contains(denied,"нет доступа"){t.Fatalf("unauthorized response: %s",denied)}
+ updatedAgain,err:=loadConfig();if err!=nil{t.Fatal(err)}
+ if updatedAgain.ContextMessages!=20{t.Fatal("unauthorized user changed global settings")}
+}
+func TestVKAdminSecretKeySkipsSQLiteAndModelContext(t *testing.T){
+ dir:=t.TempDir()
+ t.Setenv("AIBOT_CONFIG",filepath.Join(dir,"config.json"))
+ t.Setenv("AIBOT_DATA",filepath.Join(dir,"data","history.db"))
+ cfg:=defaults();cfg.AdminVKID=42;cfg.GroupID=77;cfg.VKToken="dummy-community-token"
+ if err:=saveConfig(cfg);err!=nil{t.Fatal(err)}
+ saved,err:=loadConfig();if err!=nil{t.Fatal(err)}
+ catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ store,err:=openStore(dataPath());if err!=nil{t.Fatal(err)};defer store.close()
+ b:=newBot(saved,store,catalog)
+ original:=vkAPIBaseURL;defer func(){vkAPIBaseURL=original}()
+ sent:=""
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  if err:=r.ParseForm();err!=nil{t.Error(err)}
+  if r.URL.Path=="/messages.send"{
+   sent=r.Form.Get("message")
+   if strings.Contains(sent,"SUPER-PRIVATE-KEY"){t.Error("VK reply exposed saved secret")}
+  }
+  fmt.Fprint(w,`{"response":1}`)
+ }))
+ defer srv.Close();vkAPIBaseURL=srv.URL+"/"
+ msg:=VKMessage{PeerID:42,FromID:42,ID:1,Text:"админ ключ ptero SUPER-PRIVATE-KEY"}
+ if err:=b.event(context.Background(),msg);err!=nil{t.Fatal(err)}
+ updated,err:=loadConfig();if err!=nil{t.Fatal(err)}
+ if updated.Providers["ptero"].APIKey!="SUPER-PRIVATE-KEY"||!updated.Providers["ptero"].Enabled{
+  t.Fatal("new key was not applied")
+ }
+ if !strings.Contains(sent,"сохранён"){t.Fatalf("missing confirmation: %s",sent)}
+ var messages,pending int
+ if err:=store.DB.QueryRow("SELECT COUNT(*) FROM messages").Scan(&messages);err!=nil{t.Fatal(err)}
+ if err:=store.DB.QueryRow("SELECT COUNT(*) FROM pending").Scan(&pending);err!=nil{t.Fatal(err)}
+ if messages!=0||pending!=0{t.Fatalf("secret entered SQLite: %d messages %d pending",messages,pending)}
+}
