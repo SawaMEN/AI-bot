@@ -235,7 +235,7 @@ func (b *Bot) adminCommand(ctx context.Context,cfg Config,peer,user int64,raw st
   number,err:=strconv.Atoi(parts[2])
   if err!=nil||number<field.Min||number>field.Max{return fmt.Sprintf("Введите число от %d до %d.",field.Min,field.Max),true}
   if _,err:=saveVKAdminField(field.Name,number);err!=nil{return "Ошибка сохранения: "+err.Error(),true}
-  if action=="группа"{return "✓ ID сообщества сохранён. Служба переподключится к ВК.",true}
+  if action=="группа"{b.signalReconfigure();return "✓ ID сообщества сохранён. Служба переподключится к ВК.",true}
   return "✓ Значение сохранено и действует для следующих запросов.",true
  }
  if action=="триггер"&&len(parts)==3{
@@ -259,6 +259,7 @@ func (b *Bot) adminCommand(ctx context.Context,cfg Config,peer,user int64,raw st
 func (b *Bot) adminSecretMessage(ctx context.Context,cfg Config,m VKMessage)(bool,bool,error){
  words:=strings.Fields(m.Text)
  if len(words)<3||strings.ToLower(words[0])!="админ"{return false,false,nil}
+ if m.PeerID!=m.FromID{return false,false,nil}
  action:=strings.ToLower(words[1])
  if action!="ключ"&&action!="токен"{return false,false,nil}
  // "админ ключ <provider>" is a harmless menu command.
@@ -283,7 +284,7 @@ func (b *Bot) adminSecretMessage(ctx context.Context,cfg Config,m VKMessage)(boo
  if !ok{return true,false,b.send(ctx,m,"Неизвестный провайдер.",adminMenuButtons(b.catalog,cfg,"админ провайдеры 1"))}
  if spec.KeyMode=="none"{return true,false,b.send(ctx,m,"Этот бесплатный провайдер работает без API-ключа.",adminMenuButtons(b.catalog,cfg,"админ провайдер "+id))}
  key:=strings.TrimSpace(strings.TrimPrefix(m.Text,words[0]+" "+words[1]+" "+words[2]+" "))
- if len(key)>4096||strings.ContainsAny(key," \n\r\t"){
+ if key==""||len(key)>4096||strings.ContainsAny(key," \n\r\t"){
   return true,false,b.send(ctx,m,"Ключ не принят: запрещены пробелы и переносы строк.",adminMenuButtons(b.catalog,cfg,"админ провайдер "+id))
  }
  settings:=cfg.Providers[id]
