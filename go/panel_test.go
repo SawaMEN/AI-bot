@@ -52,7 +52,7 @@ func TestCaddyOnlyOwnDomainAndLoopback(t *testing.T){
 func TestDomainPanelHostAuthAndHTTPSProxy(t *testing.T){
  t.Setenv("AIBOT_CONFIG",filepath.Join(t.TempDir(),"config.json"))
  if err:=saveConfig(defaults());err!=nil{t.Fatal(err)}
- catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ catalog,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  secret:="random-test-secret"
  handler:=panelHTTPHandler(catalog,panelDigest(secret),"panel.example.org")
  query:=func(host,proto,user,password string)*httptest.ResponseRecorder{

@@ -28,10 +28,10 @@ func TestLegacyPythonV1Migration(t *testing.T){
  path:=testConfigFile(t,original)
  cfg,err:=loadConfig();if err!=nil{t.Fatal(err)}
  if cfg.VKToken!="vk-old"||cfg.GroupID!=987{t.Fatalf("VK lost: %+v",cfg)}
- if !cfg.Providers["groq"].Enabled||cfg.Providers["groq"].APIKey!="legacy-secret"{t.Fatalf("Legacy key lost: %+v",cfg.Providers)}
- if cfg.DefaultModel!="groq:openai/gpt-oss-20b"||len(cfg.EnabledModels)!=1{t.Fatal("Legacy model not selected")}
+ if _,exists:=cfg.Providers["groq"];exists{t.Fatalf("retired legacy provider retained: %+v",cfg.Providers)}
+ if cfg.DefaultModel!=""||len(cfg.EnabledModels)!=0{t.Fatal("legacy model should be retired")}
  if err:=saveConfig(cfg);err!=nil{t.Fatal(err)}
- fresh,err:=loadConfig();if err!=nil||fresh.Providers["groq"].APIKey!="legacy-secret"{t.Fatal("Key lost on save",err)}
+ fresh,err:=loadConfig();if err!=nil||len(fresh.Providers)!=2{t.Fatal("Key lost on save",err)}
  old,err:=os.ReadFile(path+".python-v1.bak");if err!=nil||string(old)!=original{t.Fatalf("backup missing: %v",err)}
  info,err:=os.Stat(path);if err!=nil{t.Fatal(err)}
  if info.Mode().Perm()&0007!=0{t.Fatalf("config world accessible: %v",info.Mode())}
@@ -40,7 +40,7 @@ func TestLegacyPythonV1Migration(t *testing.T){
 func TestLegacyPaidCustomDisabled(t *testing.T){
  testConfigFile(t,`{"vk_token":"old","group_id":25,"provider":"custom","api_key":"secret","model":"premium/paid","context_messages":30,"context_hours":24,"retention_days":7,"max_requests_hour":50,"max_user_requests_hour":12,"max_chat_requests_hour":25}`)
  cfg,err:=loadConfig();if err!=nil{t.Fatal(err)}
- if len(cfg.Providers)!=0||len(cfg.EnabledModels)!=0{t.Fatal("Paid custom provider migrated")}
+ if len(cfg.Providers)!=2||len(cfg.EnabledModels)!=0{t.Fatal("Paid custom provider migrated")}
 }
 func TestVKAutoSettingsSuccessAndDenial(t *testing.T){
  calls:=0

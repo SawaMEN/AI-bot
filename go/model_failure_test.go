@@ -42,7 +42,7 @@ func TestVKShowsThreeConcreteFailureReasons(t *testing.T){
  cfg.Providers=map[string]ProviderConfig{"gemini":{APIKey:"private-gemini-secret",Enabled:true}}
  cfg.EnabledModels=nil
  cfg.AutoModelsProviders=[]string{"gemini"}
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  keys:=c.candidates(cfg)
  if len(keys)<3{t.Fatalf("expected at least three candidate models, got %v",keys)}
@@ -64,7 +64,7 @@ func TestVKShowsThreeConcreteFailureReasons(t *testing.T){
 
 func TestModelScannerPrintsIndividualFailureStatuses(t *testing.T){
  cfg:=testCfg()
- c,_:=newCatalog()
+ c,_:=newTestCatalog()
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  var out bytes.Buffer
  err:=scanAvailableModelsWith(context.Background(),cfg,c,&out,true,
@@ -81,7 +81,7 @@ func TestModelScannerPrintsIndividualFailureStatuses(t *testing.T){
 
 func TestOpenAICompatibleTextContentArray(t *testing.T){
  cfg:=testCfg()
- c,_:=newCatalog()
+ c,_:=newTestCatalog()
  server:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   if r.URL.Path!="/openai/v1/chat/completions"{t.Errorf("wrong endpoint %s",r.URL.Path)}
   w.Header().Set("Content-Type","application/json")
@@ -95,7 +95,7 @@ func TestOpenAICompatibleTextContentArray(t *testing.T){
 }
 
 func TestOpenAILengthFinishReasonIsActionable(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  server:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   w.Header().Set("Content-Type","application/json")
   fmt.Fprint(w,`{"choices":[{"finish_reason":"length","message":{"content":""}}]}`)

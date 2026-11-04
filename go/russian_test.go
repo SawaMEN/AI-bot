@@ -30,7 +30,7 @@ func TestRussianExclusionsSurviveAutoModeAndPreference(t *testing.T){
  cfg:=testCfg()
  cfg.AutoModelsProviders=[]string{"groq","zai"}
  cfg.RussianBlockedModels=[]string{"groq:openai/gpt-oss-20b"}
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  list:=c.enabled(cfg)
  for _,key:=range list{if key==cfg.RussianBlockedModels[0]{t.Fatal("blocked language model re-enabled automatically")}}
  if c.defaultModel(cfg)!="groq:openai/gpt-oss-120b"{t.Fatalf("default did not migrate: %s",c.defaultModel(cfg))}
@@ -56,7 +56,7 @@ func TestEnglishOnlyModelFallsBackToRussianAndQuarantines(t *testing.T){
  defer func(){vkAPIBaseURL=oldVK}()
  cfg:=testCfg()
  cfg.SearchEnabled=false
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  spec:=c.Specs["groq"];spec.Endpoint=server.URL+"/groq";c.Specs["groq"]=spec
  spec=c.Specs["zai"];spec.Endpoint=server.URL+"/zai";c.Specs["zai"]=spec
  store,err:=openStore(filepath.Join(t.TempDir(),"history.db"));if err!=nil{t.Fatal(err)}

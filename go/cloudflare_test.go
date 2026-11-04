@@ -12,7 +12,7 @@ type cloudflareRoundTripper func(*http.Request)(*http.Response,error)
 func (fn cloudflareRoundTripper)RoundTrip(r *http.Request)(*http.Response,error){return fn(r)}
 
 func TestCuratedRegistryModelIDsAreSelectable(t *testing.T){
- catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ catalog,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  for _,name:=range catalog.Order{
   spec:=catalog.Specs[name]
   if spec.FreePolicy!="curated"{continue}
@@ -35,7 +35,7 @@ func TestCloudflareModelPrefixIsValidAndUnsafeIDsAreRejected(t *testing.T){
  }
 }
 func TestCloudflareFreeModelGeneratesThroughCorrectEndpoint(t *testing.T){
- catalog,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ catalog,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  cfg:=defaults()
  cfg.Providers["cloudflare"]=ProviderConfig{Enabled:true,APIKey:"mock-secret",CloudflareAccount:"account-123"}
  cfg.EnabledModels=[]string{"cloudflare:@cf/zai-org/glm-4.7-flash"}

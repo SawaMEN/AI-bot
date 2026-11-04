@@ -41,7 +41,7 @@ func TestEnabledProviderWithoutManualSelectionUsesAutomaticCatalog(t *testing.T)
  cfg.Providers=map[string]ProviderConfig{"groq":cfg.Providers["groq"]}
  cfg.EnabledModels=nil
  cfg.AutoModelsProviders=nil
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  candidates:=c.candidates(cfg)
  if len(candidates)!=2{t.Fatalf("enabled free providers with no explicit models should work automatically: %v",candidates)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
@@ -51,7 +51,7 @@ func TestEnabledProviderWithoutManualSelectionUsesAutomaticCatalog(t *testing.T)
 
 func TestPanelAddingProviderAutomaticallyEnablesModelSelection(t *testing.T){
  cfg:=defaults()
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  _,err=applyWebForm(&cfg,c,url.Values{
   "action":{"provider"},"provider":{"groq"},"api_key":{"test-only-key"},"enabled":{"on"},
  })
@@ -64,7 +64,7 @@ func TestPanelAddingProviderAutomaticallyEnablesModelSelection(t *testing.T){
 
 func TestVKMissingModelStatusExplainsPendingVersusFailed(t *testing.T){
  cfg:=testCfg()
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  pending:=modelAvailabilityExplanation(c,cfg)
  if !strings.Contains(pending,"Ещё не проверено")||!strings.Contains(pending,"sudo aibot check-ai"){
@@ -86,7 +86,7 @@ func TestVKMissingModelStatusExplainsPendingVersusFailed(t *testing.T){
 
 func TestVKAvailableModelsReappearAfterSuccessfulProbe(t *testing.T){
  cfg:=testCfg()
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  c.health=newModelHealth(filepath.Join(t.TempDir(),"health.json"))
  if err:=c.health.record(cfg,"groq:openai/gpt-oss-20b",true);err!=nil{t.Fatal(err)}
  if got:=listModels(c,cfg,1,false);!strings.Contains(got,"GPT-OSS 20B")||strings.Contains(got,"Ещё не проверено"){

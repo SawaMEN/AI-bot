@@ -44,7 +44,7 @@ func newCatalog() (*Catalog,error) {
  var blob struct {Providers []ProviderSpec `json:"providers"`};if err:=json.Unmarshal(registryJSON,&blob);err!=nil{return nil,err}
  c:=&Catalog{Specs:map[string]ProviderSpec{},verified:map[string][]Model{},client:&http.Client{Timeout:20*time.Second}}
  for _,p:=range blob.Providers {
-  if p.ID==""||!validHTTPS(p.KeyURL)|| (p.Type=="openai"&&!validHTTPS(p.Endpoint)) {return nil,fmt.Errorf("неверный провайдер %q",p.ID)}
+  if p.ID==""||!validHTTPS(p.KeyURL)|| ((p.Type=="openai"||p.Type=="openai_anon")&&!validHTTPS(p.Endpoint)) {return nil,fmt.Errorf("неверный провайдер %q",p.ID)}
   c.Specs[p.ID]=p;c.Order=append(c.Order,p.ID)
  }
  return c,nil
@@ -101,7 +101,7 @@ func (c *Catalog) candidates(cfg Config) []string {
  c.mu.RLock();defer c.mu.RUnlock()
  result:=[]string{};seen:=map[string]bool{}
  for _,name:=range c.Order {
-  spec:=c.Specs[name];settings,ok:=cfg.Providers[name];if !ok||!settings.Enabled||settings.APIKey==""&&spec.AnonymousKey==""{continue}
+  spec:=c.Specs[name];settings,ok:=cfg.Providers[name];if !ok||!settings.Enabled||(settings.APIKey==""&&spec.AnonymousKey==""&&spec.Type!="openai_anon"){continue}
   if name=="cloudflare"&&settings.CloudflareAccount==""{continue}
   verified:=map[string]bool{};for _,m:=range c.verified[name]{verified[m.ID]=true}
   add:=func(model string) {

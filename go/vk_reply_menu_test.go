@@ -25,7 +25,7 @@ type replyKeyboardJSON struct{
 }
 
 func TestVKReplyKeyboardIsPermanentAndUsesTextActions(t *testing.T){
- cfg:=testCfg();c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ cfg:=testCfg();c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  cases:=map[string]string{
   "главная":replyMainBoard(),
   "личные":replyPersonalBoard(),
@@ -89,7 +89,7 @@ func TestVKReplyButtonsDoNotHijackUnmentionedGroupMessages(t *testing.T){
 }
 
 func TestVKPeerKeyboardDoesNotAffectGroup(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  var personal,group replyKeyboardJSON
  if err:=json.Unmarshal([]byte(keyboardForPeer(42,"настройки",c,cfg)),&personal);err!=nil{t.Fatal(err)}
  if err:=json.Unmarshal([]byte(keyboardForPeer(2000000001,"настройки",c,cfg)),&group);err!=nil{t.Fatal(err)}
@@ -118,7 +118,7 @@ func TestVKTextKeyboardSentViaMessagesSend(t *testing.T){
 }
 
 func TestVKReplyMenuNavigationReturnsToContext(t *testing.T){
- cfg:=testCfg();c,_:=newCatalog()
+ cfg:=testCfg();c,_:=newTestCatalog()
  for _,tc:=range []struct{command,want string}{
   {"меню","💬 Задать вопрос"},
   {"настройки","Сбросить мои настройки"},

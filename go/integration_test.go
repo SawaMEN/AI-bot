@@ -23,7 +23,7 @@ func testCfg() Config{
 }
 func TestPersonalPreferenceAndChatIsolation(t *testing.T){
  store,err:=openStore(filepath.Join(t.TempDir(),"history.db"));if err!=nil{t.Fatal(err)};defer store.close()
- cfg:=testCfg();catalog,_:=newCatalog()
+ cfg:=testCfg();catalog,_:=newTestCatalog()
  if got:=cmdApply(store,catalog,cfg,"chat",2000000001,[]string{"модель","2"});!strings.Contains(got,"GLM"){t.Fatal(got)}
  model,_,_,_,_:=store.effective(cfg,2000000001,42,catalog)
  if model!="zai:glm-4.7-flash"{t.Fatal("chat inheritance",model)}
@@ -45,7 +45,7 @@ func TestHTTPAIOnlyApprovedFreeModel(t *testing.T){
   w.Header().Set("Content-Type","application/json")
   w.Write([]byte(`{"choices":[{"message":{"content":"Привет!"}}]}`))
  }));defer server.Close()
- catalog,_:=newCatalog();spec:=catalog.Specs["groq"];spec.Endpoint=server.URL;catalog.Specs["groq"]=spec
+ catalog,_:=newTestCatalog();spec:=catalog.Specs["groq"];spec.Endpoint=server.URL;catalog.Specs["groq"]=spec
  ai:=newAI(catalog);ai.client=server.Client();ai.client.Timeout=5*time.Second
  cfg:=testCfg()
  out,err:=ai.generate(context.Background(),cfg,"groq:openai/gpt-oss-20b",[]Message{{Role:"user",Content:"привет"}})

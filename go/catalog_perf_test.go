@@ -30,7 +30,7 @@ func TestFreeCatalogDiscoveryConcurrent(t *testing.T){
   fmt.Fprint(w,`{"data":[{"id":"qwen/free:free","pricing":{"prompt":"0","completion":"0","input":"0","output":"0"}}]}`)
  }))
  defer server.Close()
- c,err:=newCatalog();if err!=nil{t.Fatal(err)}
+ c,err:=newTestCatalog();if err!=nil{t.Fatal(err)}
  for _,key:=range []string{"openrouter","pollinations"}{
   spec:=c.Specs[key];spec.CatalogURL=server.URL;c.Specs[key]=spec
  }

@@ -37,7 +37,7 @@ func defaults() Config {return Config{Trigger:"бот",ContextMessages:30,Contex
 func configPath() string {if x:=os.Getenv("AIBOT_CONFIG");x!="" {return x};return "/etc/ai-bot/config.json"}
 func dataPath() string {if x:=os.Getenv("AIBOT_DATA");x!="" {return x};return "/var/lib/ai-bot/history.db"}
 func loadConfig() (Config,error) {
- cfg:=defaults();b,err:=os.ReadFile(configPath());if errors.Is(err,os.ErrNotExist){return cfg,nil};if err!=nil{return cfg,err}
+ cfg:=defaults();b,err:=os.ReadFile(configPath());if errors.Is(err,os.ErrNotExist){enableKeylessCatalog(&cfg);return cfg,nil};if err!=nil{return cfg,err}
  if err:=json.Unmarshal(b,&cfg);err!=nil{return cfg,err}
  if cfg.Trigger==""{cfg.Trigger="бот"};if cfg.Providers==nil{cfg.Providers=map[string]ProviderConfig{}}
  // Legacy Python v1 used a single provider/api_key/model. Migrate in memory,
@@ -70,6 +70,7 @@ func loadConfig() (Config,error) {
    }
   }
  }
+ enableKeylessCatalog(&cfg)
  if cfg.ContextMessages<1||cfg.ContextMessages>100{return cfg,errors.New("недопустимый context_messages")}
  if cfg.MaxRequestsHour<1||cfg.MaxUserRequestsHour<1||cfg.MaxChatRequestsHour<1{return cfg,errors.New("неверные лимиты API")}
  if cfg.ContextHours<1||cfg.RetentionDays<1{return cfg,errors.New("неверный срок хранения")}
@@ -115,3 +116,25 @@ func saveConfig(cfg Config) error {
  return os.Rename(f.Name(),path)
 }
 func validHTTPS(u string) bool {return strings.HasPrefix(u,"https://")}
+
+// Enable approved anonymous services, keep configured Gemini/OpenRouter/Cloudflare,
+// and retire providers that are no longer supported.
+// An explicitly disabled anonymous provider remains disabled.
+func enableKeylessCatalog(cfg *Config) {
+ c,err:=newCatalog();if err!=nil{return}
+ if cfg.Providers==nil{cfg.Providers=map[string]ProviderConfig{}}
+ for id:=range cfg.Providers{if _,ok:=c.Specs[id];!ok{delete(cfg.Providers,id)}}
+ for _,id:=range []string{"llm7","g4fgroq"}{
+  if _,ok:=cfg.Providers[id];!ok{cfg.Providers[id]=ProviderConfig{Enabled:true}}
+ }
+ models:=make([]string,0,len(cfg.EnabledModels))
+ for _,key:=range cfg.EnabledModels{
+  id,model,err:=splitModel(key)
+  if err==nil&&c.modelAllowedID(id,model){models=append(models,key)}
+ }
+ cfg.EnabledModels=models
+ autos:=make([]string,0,len(cfg.AutoModelsProviders))
+ for _,id:=range cfg.AutoModelsProviders{if _,ok:=c.Specs[id];ok{autos=append(autos,id)}}
+ cfg.AutoModelsProviders=autos
+ if id,model,err:=splitModel(cfg.DefaultModel);err!=nil||!c.modelAllowedID(id,model){cfg.DefaultModel=""}
+}

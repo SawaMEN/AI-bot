@@ -32,7 +32,7 @@ func TestVKCallbackButtons(t *testing.T){
  if callbackCommand(json.RawMessage(`{"aibot":1,"command":"модель 2"}`))!="модель 2"{t.Fatal("callback")}
 }
 func TestGoAdminWebLimits(t *testing.T) {
- cfg:=defaults();c,_:=newCatalog()
+ cfg:=defaults();c,_:=newTestCatalog()
  _,err:=applyWebForm(&cfg,c,url.Values{"action":{"provider"},"provider":{"openai"},"api_key":{"key"}})
  if err==nil{t.Fatal("unknown paid provider allowed")}
  _,err=applyWebForm(&cfg,c,url.Values{"action":{"settings"},"context_messages":{"1000"}})

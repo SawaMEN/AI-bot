@@ -31,9 +31,11 @@ func TestSQLitePythonMigration(t *testing.T){
 func TestConfigMigration(t *testing.T){
  path:=filepath.Join(t.TempDir(),"config.json")
  os.Setenv("AIBOT_CONFIG",path);defer os.Unsetenv("AIBOT_CONFIG")
- raw:=[]byte(`{"vk_token":"test","group_id":1,"context_messages":30,"context_hours":24,"retention_days":7,"max_requests_hour":50,"max_user_requests_hour":12,"max_chat_requests_hour":25,"providers":{"groq":{"api_key":"abc","enabled":true}},"enabled_models":["groq:openai/gpt-oss-20b"]}`)
+ raw:=[]byte(`{"vk_token":"test","group_id":1,"context_messages":30,"context_hours":24,"retention_days":7,"max_requests_hour":50,"max_user_requests_hour":12,"max_chat_requests_hour":25,"providers":{"gemini":{"api_key":"abc","enabled":true},"groq":{"api_key":"retired","enabled":true}},"enabled_models":["gemini:gemini-2.5-flash","groq:openai/gpt-oss-20b"]}`)
  if err:=os.WriteFile(path,raw,0640);err!=nil{t.Fatal(err)}
  cfg,err:=loadConfig();if err!=nil{t.Fatal(err)}
- if cfg.Providers["groq"].APIKey!="abc"{t.Fatal("secret lost")}
+ if cfg.Providers["gemini"].APIKey!="abc"{t.Fatal("Gemini secret lost")}
+ if _,old:=cfg.Providers["groq"];old{t.Fatal("retired Groq credentials still active")}
+ if len(cfg.EnabledModels)!=1||cfg.EnabledModels[0]!="gemini:gemini-2.5-flash"{t.Fatal("Gemini model selection lost",cfg.EnabledModels)}
  if err=saveConfig(cfg);err!=nil{t.Fatal(err)}
 }
