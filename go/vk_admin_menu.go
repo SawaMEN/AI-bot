@@ -24,6 +24,18 @@ func adminMenuButtons(c *Catalog,cfg Config,command string)string{
   {{"🏠 Обычное меню","меню","positive"}},
  })}
  switch parts[1]{
+ case "переключить":
+  if len(parts)>2{return adminMenuButtons(c,cfg,"админ провайдер "+parts[2])}
+ case "ключ":
+  if len(parts)>2{return adminMenuButtons(c,cfg,"админ провайдер "+parts[2])}
+ case "аккаунт":return adminMenuButtons(c,cfg,"админ провайдер cloudflare")
+ case "модель":return adminMenuButtons(c,cfg,"админ модели 1")
+ case "поиск","резерв","контекст","часы","история","триггер":
+  return adminMenuButtons(c,cfg,"админ функции")
+ case "всего","пользователь","беседа","пауза":
+  return adminMenuButtons(c,cfg,"админ лимиты")
+ case "группа","токен","администратор":
+  return adminMenuButtons(c,cfg,"админ вк")
  case "провайдеры":
   page:=1;if len(parts)>2{page,_=strconv.Atoi(parts[2])};if page<1{page=1}
   pages:=(len(c.Order)+3)/4;if page>pages{page=pages}
