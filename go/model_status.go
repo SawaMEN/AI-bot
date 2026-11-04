@@ -11,7 +11,7 @@ func modelAvailabilityExplanation(c *Catalog,cfg Config)string{
  active:=0
  for id,settings:=range cfg.Providers{
   spec,ok:=c.Specs[id]
-  if ok&&settings.Enabled&&(settings.APIKey!=""||spec.AnonymousKey!=""){active++}
+  if ok&&settings.Enabled&&(!spec.requiresKey()||settings.APIKey!=""||spec.AnonymousKey!=""){active++}
  }
  if active==0{
   return "ИИ-провайдер пока не подключён. Администратор сервера: sudo aibot setup."
